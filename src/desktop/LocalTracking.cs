@@ -55,7 +55,8 @@ internal sealed class TrackingPlanner {
  int stable;
  readonly AdaptiveAim aim=new();readonly AimDeadband horizontal=new(),vertical=new();readonly FeedbackTravelBudget feedback=new();
  public double SpeedScale {get;private set;}=.15;
- public void Reset(){previous=null;stable=0;aim.Reset();horizontal.Reset();vertical.Reset();feedback.Reset();}
+ public bool WaitingForFeedback {get;private set;}
+ public void Reset(){WaitingForFeedback=false;previous=null;stable=0;aim.Reset();horizontal.Reset();vertical.Reset();feedback.Reset();}
  public Pose? Plan(FaceResult result,CameraReading state,bool reversePan,bool reverseTilt,DateTime? now=null) {
   if(result.Error!=null||result.Width<=0||result.Height<=0||result.Faces.Length!=1){Reset();return null;}
   var face=result.Faces[0];
@@ -70,7 +71,7 @@ internal sealed class TrackingPlanner {
   return PlanCenter(p.CenterX/result.Width,p.CenterY/result.Height,state,reversePan,reverseTilt,now??DateTime.UtcNow);
  }
  Pose? PlanCenter(double x,double y,CameraReading state,bool reversePan,bool reverseTilt,DateTime now) {
-  feedback.Observe(state,now);double rawX=x-.5,rawY=y-.5;
+  WaitingForFeedback=false;feedback.Observe(state,now);double rawX=x-.5,rawY=y-.5;
   if(previous!=null&&Math.Abs(x-previous.Value.X)<0.18&&Math.Abs(y-previous.Value.Y)<0.18)stable++;else stable=1;
   previous=(x,y);if(stable<2)return null;
   (x,y)=aim.Update(x,y,now);
@@ -84,6 +85,7 @@ internal sealed class TrackingPlanner {
    if(error==0||Math.Abs(rawError)<.035||Math.Sign(error)!=Math.Sign(rawError))return c.Value;
    int units=(int)Math.Clamp(Math.Round(Math.Abs(error)*16),0,5);if(units<c.Step)return c.Value;
    int delta=feedback.Limit(name,Math.Max(c.Step,units/c.Step*c.Step)*Math.Sign(error)*sign);
+   if(delta==0)WaitingForFeedback=true;
    return Math.Clamp(c.Value+delta,c.Min,c.Max);
   }
   int pan=Adjust("Pan",horizontal.Error(x-0.5),rawX,reversePan?-1:1),tilt=Adjust("Tilt",vertical.Error(y-0.5),rawY,reverseTilt?1:-1);

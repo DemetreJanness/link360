@@ -394,7 +394,7 @@ internal sealed partial class ControllerForm : Form {
      if(state==null||busy){trackingPlanner.Reset();continue;}
      var testBefore=CurrentPose();double? testCommandMs=null;var testClock=System.Diagnostics.Stopwatch.StartNew();
      var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,observedAt);
-     if(target==null)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
+     if(target==null&&!trackingPlanner.WaitingForFeedback)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
      if(target!=null&&trackingOrigin!=null&&(Math.Abs(target.Pan-trackingOrigin.Pan)>20||Math.Abs(target.Tilt-trackingOrigin.Tilt)>15))throw new IOException("Tracking travel limit reached; reframe manually before enabling again.");
      trackingStatus.Text=result.People.Length==0?"Tracking on · no torso; holding position":result.People.Length>1?"Tracking on · multiple people; holding position":"Tracking on · torso target detected";
      if(target!=null&&!busy) {
