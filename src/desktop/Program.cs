@@ -65,7 +65,6 @@ internal static class Program {
   ApplicationConfiguration.Initialize();
   using var instance=new Mutex(true,"Local\\LINK360.Desktop",out bool first);
   if(!first){MessageBox.Show("LINK360 is already running.");return;}
-  if(args.Contains("--vape-alert")){Application.Run(new VapeAlertForm());return;}
   int resume=Array.IndexOf(args,"--resume-coverage-id");Application.Run(new ControllerForm(resumeCoverageId:resume>=0&&resume+1<args.Length?args[resume+1]:null));
  }
 }

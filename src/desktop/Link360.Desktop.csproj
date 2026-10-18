@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>LINK360</AssemblyName>
+    <Link360Profile Condition="'$(Link360Profile)' == ''">Local</Link360Profile>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Link360Profile)' == 'Community'">
+    <DefineConstants>$(DefineConstants);COMMUNITY_REVIEW</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="OpenCvSharp4" Version="4.13.0.20260627" />
@@ -20,4 +24,7 @@
     <Compile Include="../native/NativeTracking.cs" Link="NativeTracking.cs" />
     <Compile Include="../native/NativeSpeedMotion.cs" Link="NativeSpeedMotion.cs" />
   </ItemGroup>
+  <Target Name="ValidateLink360Profile" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(Link360Profile)' != 'Local' And '$(Link360Profile)' != 'Community'" Text="Link360Profile must be Local or Community." />
+  </Target>
 </Project>

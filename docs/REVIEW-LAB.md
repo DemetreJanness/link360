@@ -79,7 +79,7 @@ not establish optical movement quality. Rebuild after any conflict resolution.
 To promote an accepted fix into local development, use a separate integration
 branch from its current head and select only accepted implementation/test
 commits. Re-test against local development, then merge that integration branch.
-Do not merge the entire community branch: it contains profile/lab infrastructure.
+The 2026-10-18 promotion explicitly aligns both branches. The build-time Link360Profile now isolates local/community data, so subsequent reviewed promotions may share source while preserving each profile.
 Promotion remains an explicit decision, independent of publishing both builds.
 
 ## Build, launch and private data
@@ -101,7 +101,7 @@ A one-time private seed copy initialized community. No subsequent settings sync
 occurs. A fresh scan archives its prior community map under `preserved-maps`,
 clears active old measurements, and creates a new scan identity. Failure or
 cancellation leaves the new map incomplete, never silently restoring old points.
-The original ten-point map and primary binary remain separate.
+The original ten-point map stays separate. Both binaries now use the current tracking source with different build profiles.
 
 The shared `Local\LINK360.Desktop` mutex allows one controller at a time.
 Cameras, OBS, hotkeys and Discord remain shared Windows resources; hardware tests
@@ -129,3 +129,11 @@ Repeat at other gaps and run the 60-second recovery test. Version 3 identifies
 a scene-derived map with subject-centred extensions. Original map pairs,
 placement identity and archived prior maps stay intact. A new room-scene scan
 still discards active old measurements and starts fresh.
+
+
+## Aligned build profiles (2026-10-18)
+
+The user approved promoting the latest tracking implementation to both builds.
+Build normally for Local, or pass -p:Link360Profile=Community for the isolated
+review build. scripts/test-review-lab.ps1 supplies this automatically. Both
+profiles preserve their own settings. The abandoned vape experiment is removed.
