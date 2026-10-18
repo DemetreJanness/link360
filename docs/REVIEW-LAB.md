@@ -85,3 +85,14 @@ This is source/build/data separation, not an OS sandbox for untrusted code.
 Review code before running it. The ten original map points stay in the normal
 app's private settings; community tests cannot change that file through the
 community settings path.
+
+## Current test candidate
+
+On October 18, the user requested testing the friend's separate branch
+`codex/tracking-pipeline-efficiency` rather than waiting for it to reach `main`.
+Incoming SHA: `6c1a484a2bdaecb022aca7da1c0d7b1b27d26e13`; community import: `148abb0`.
+It is applied only here, followed by a separate timestamp correction and
+hardware-free integration tests. See
+[incoming review and validation](investigations/community-pipeline-review.md).
+The test runner now includes the actual-loop simulation in addition to the
+default fixtures. Local development and remote branches were not modified.

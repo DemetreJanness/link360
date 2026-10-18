@@ -367,8 +367,7 @@ internal sealed partial class ControllerForm : Form {
      if(sharedPreview){
       var shared=linkObservation;observedAt=linkObservationTime;
       if(shared==null||lastLinkFrame==null){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · waiting for a fresh Link frame";await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
-      if(observedAt<=lastSharedObservation){await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
-      lastSharedObservation=observedAt;
+
       result=shared;
      }else{
       inference??=new LocalBodySession(session.Token,wholeBody:true,torso:true);
@@ -378,7 +377,10 @@ internal sealed partial class ControllerForm : Form {
       if(packet.ReadAtUtc==null&&DateTime.UtcNow-lastChanged>TimeSpan.FromSeconds(2))throw new IOException("Camera frames unchanged; restart preview before tracking.");
       result=await inference.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();observedAt=packet.ReadAtUtc??packet.ReceivedUtc;
      }
-     if(observedAt>DateTime.UtcNow||DateTime.UtcNow-observedAt>=TimeSpan.FromMilliseconds(600)){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · Link frame stale; holding position";continue;}frameHold=false;
+     if(observedAt>DateTime.UtcNow||DateTime.UtcNow-observedAt>=TimeSpan.FromMilliseconds(600)){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · Link frame stale; holding position";if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
+     // Age-check duplicates too; rejected future timestamps must not advance the cursor.
+     if(sharedPreview){if(observedAt<=lastSharedObservation){await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}lastSharedObservation=observedAt;}
+     frameHold=false;
      if(state==null||busy){trackingPlanner.Reset();continue;}
      var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,observedAt);
      if(target==null)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);

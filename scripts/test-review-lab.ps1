@@ -37,6 +37,7 @@ try {
     Invoke-Check 'dotnet' @('restore','tests/Link360.Tests.csproj','--configfile',$restoreConfig,'-p:NuGetAudit=false')
     Invoke-Check 'dotnet' @('build','tests/Link360.Tests.csproj','-c','Release','--no-restore','-o',(Join-Path $artifactRoot 'bin'))
     Invoke-Check (Join-Path $artifactRoot 'bin/LINK360.Tests.exe') @()
+    Invoke-Check (Join-Path $artifactRoot 'bin/LINK360.Tests.exe') @('--shared-pipeline-test',(Join-Path $reportDir 'shared-pipeline'))
     $revision = & git rev-parse HEAD
     $branch = & git branch --show-current
     $dirty = @(& git status --porcelain).Count -gt 0
