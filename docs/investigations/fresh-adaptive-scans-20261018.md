@@ -98,3 +98,32 @@ spread, duplicate, cancellation and movement checks remain unchanged.
 Discovery now reports its proposed locations in the private local diagnostic
 report even when validation fails, so the next failure can be explained from
 numeric evidence. No frame recording or external runtime service was added.
+
+## Retry from a different initial PTZ direction
+
+The next authorized retry started at 20:37:13 UTC and saved no anchors. The
+camera reported pan 27, tilt -24, zoom 100 at both warm-up and scan start. The
+live Link view faced below the useful shared background. The scan held its pose
+through four failed centre-match attempts (17/19 matches, then concentrated
+support). It never reached target discovery, so it did not test the nearby-point
+correction. No evidence establishes why the pre-existing camera direction changed.
+The new generation remains incomplete; both copies of the previous ten-point
+map and the primary build hashes were verified unchanged. Sharing was restored.
+
+The source previously attempted registration at whatever pose capture opened.
+It now requests a bounded neutral wide view after the spoken countdown, before
+fresh optical registration. This uses existing standard Link controls at pan 0,
+tilt 0, zoom 100, not a firmware reset or a saved room anchor. Preconditions are
+fresh direct frames from both cameras, successful empty-view inference, confirmed
+native tracking off, unambiguous manual controls and valid ranges/steps/readback.
+Initial travel is limited to 60 pan units, 40 tilt units and the existing zoom
+range. Unknown flags, errors, excessive travel and cancellation stop the run.
+A matching control readback is not optical calibration: the subsequent room
+registration and coverage checks still determine whether any map can be saved.
+
+Hardware-free fixtures verify the off-axis starting case and rejection for
+people, detector errors, unknown/native-on tracking, manual flags, bad steps,
+range mismatches, failed reads and ambiguous controls. The installed camera's
+read-only probe reported expected range/step/manual flags. The new initial
+framing step has not yet passed a physical scan; do not promote this evidence
+to a completed new-placement room map or Acer recovery.

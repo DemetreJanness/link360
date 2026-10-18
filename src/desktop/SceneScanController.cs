@@ -89,7 +89,19 @@ internal sealed partial class ControllerForm {
      using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(TimeSpan.FromMinutes(4));var token=deadline.Token;
      state=await engine.Execute(new(ReadNativeTracking:true),token);
      if(state.NativeTrackingEnabled!=false)throw new IOException("Built-in tracking turned on during the countdown; scene scan stopped.");
-     origin=CurrentPose();returnPose=origin;scanOrigin=origin;
+     SetScenePhase("initial-framing");
+     SceneStatus("Setting a wide starting view","Checking fresh empty views before a bounded move. Room alignment is verified next.",true);
+     var beforeHome=CurrentPose();returnPose=beforeHome;scanOrigin=beforeHome;
+     var freshAfter=DateTime.UtcNow;var initialRoom=await scanFeeds.RoomFrame(token);var initialLink=await scanFeeds.LinkFrame(token);
+     var initialRoomBody=await detector.Infer(initialRoom.Bytes,token,.35);var initialLinkBody=await detector.Infer(initialLink.Bytes,token,.35);
+     state=await engine.Execute(new(ReadNativeTracking:true),token);
+     SceneScanPolicy.Fresh(initialRoom,DateTime.UtcNow,freshAfter);SceneScanPolicy.Fresh(initialLink,DateTime.UtcNow,freshAfter);
+     var neutral=SceneScanPolicy.NeutralStart(state,initialRoomBody,initialLinkBody);
+     RecordSceneEvent(new{type="initial-framing",from=CurrentPose(),requested=neutral,atUtc=DateTime.UtcNow});
+     if(CurrentPose()!=neutral)state=await engine.Execute(new(Target:neutral,DurationMs:1500),token);
+     if(CurrentPose()!=neutral)throw new IOException("Initial framing readback did not match; scan stopped before measuring points.");
+     await Task.Delay(500,token);origin=CurrentPose();
+     RecordSceneEvent(new{type="initial-framing-readback",pose=origin,atUtc=DateTime.UtcNow});SetScenePhase("registration");
      RecordSceneEvent(new{type="scan-origin",pose=origin,atUtc=DateTime.UtcNow});
      // Only this generation's fresh frames and anchors may complete the scan.
      // Failure or cancellation leaves older calibration archived and inactive.

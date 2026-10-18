@@ -16,6 +16,23 @@ internal static class SceneScanPolicy {
  public static void Fresh(FeedFrame frame,DateTime now,DateTime after){
   if(frame.ReadAtUtc is not DateTime read||read<=after||read>now.AddMilliseconds(100)||now-read>TimeSpan.FromMilliseconds(900))throw new IOException("Waiting for fresh direct-camera frames; no scene movement sent.");
  }
+ // A driver-space starting view, not a measured room centre or a saved anchor.
+ // Existing Link standard-control units: pan/tilt zero and widest zoom 100.
+ public static Pose NeutralStart(CameraReading state,BodyResult room,BodyResult link){
+  if(state.Error!=null||state.NativeTrackingEnabled!=false)throw new IOException("Built-in tracking must be confirmed off before initial framing.");
+  if(room.Error!=null||link.Error!=null||room.Width<=0||room.Height<=0||link.Width<=0||link.Height<=0||room.People.Length!=0||link.People.Length!=0)
+   throw new IOException("Leave both camera views empty before initial framing.");
+  int Axis(string name,int target,int maxTravel){
+   var controls=state.Controls.Where(c=>c.Name==name).ToArray();
+   if(controls.Length!=1)throw new IOException("Initial framing needs one verified "+name+" control.");
+   var c=controls[0];
+   if(c.RangeHResult!=0||c.GetHResult!=0||c.Step<=0||c.Min>c.Max||(c.Capabilities&2)==0||c.Flags!=2||c.Value<c.Min||c.Value>c.Max||target<c.Min||target>c.Max||((long)target-c.Min)%c.Step!=0)
+    throw new IOException("Initial framing is unavailable for the reported "+name+" range, step or flags.");
+   if(Math.Abs((long)target-c.Value)>maxTravel)throw new IOException("Initial framing exceeds the scan travel limit; face the Link toward the room and retry.");
+   return target;
+  }
+  return new(Axis("Pan",0,60),Axis("Tilt",0,40),Axis("Zoom",100,300));
+ }
  public static Pose Next(SceneMatch match,double x,double y,CameraReading state,Pose origin,bool reversePan,bool reverseTilt){
   double ex=x-match.X,ey=y-match.Y;
   if(!double.IsFinite(ex+ey)||x<0||x>1||y<0||y>1)throw new IOException("Invalid scene target.");
