@@ -5,7 +5,7 @@ namespace Link360Desktop;
 internal record SceneAnchor(double X,double Y,int Pan,int Tilt,int Zoom,int Inliers,double InlierRatio,
  [property:System.Text.Json.Serialization.JsonIgnore] SceneObject[]? RoomObjects=null,
  [property:System.Text.Json.Serialization.JsonIgnore] SceneObject[]? LinkObjects=null,bool BoundaryLimited=false);
-internal record SceneReference(string Id,DateTime CapturedUtc,SceneAnchor[] Anchors);
+internal record SceneReference(string Id,DateTime CapturedUtc,SceneAnchor[] Anchors,SceneTarget[]? Targets=null);
 internal record SceneMatch(double X,double Y,int Inliers,double InlierRatio,PointF[]? RoomFeatures=null,PointF[]? LinkFeatures=null);
 
 // A planar background registration, not depth reconstruction or a person map.

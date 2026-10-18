@@ -13,7 +13,7 @@ internal sealed class PreviewSurface : Control {
  RoomPoint[] mapped=[];
  readonly bool collectionGuide;
  RoomCollectionGuide guide=new([],null);
- bool sceneMode,sceneRoom;PointF[] sceneFeatures=[];PointF? sceneCentre;int sceneTarget;SceneObject[] sceneObjects=[];
+ bool sceneMode,sceneRoom;SceneTarget[] sceneTargets=[];PointF[] sceneFeatures=[];PointF? sceneCentre;int sceneTarget;SceneObject[] sceneObjects=[];
  readonly bool framing;string? feedback;DateTime feedbackUntil;Color feedbackColor;
  public PreviewSurface(bool framing=false,bool collectionGuide=false){this.framing=framing;this.collectionGuide=collectionGuide;DoubleBuffered=true;BackColor=Color.FromArgb(15,19,25);ForeColor=Color.WhiteSmoke;MinimumSize=new Size(220,130);}
  public void UpdateFrame(byte[] bytes,BodyResult? body=null,FaceResult? faces=null) {
@@ -29,10 +29,10 @@ internal sealed class PreviewSurface : Control {
   Invalidate();
   AccessibleName=caption;
  }
- public void Clear(string message){frame?.Dispose();frame=null;boxes=[];chairs=[];centers=[];caption=message;AccessibleName=message;Invalidate();}
+ public void Clear(string message){sceneMode=false;sceneFeatures=[];sceneTargets=[];sceneObjects=[];sceneCentre=null;frame?.Dispose();frame=null;boxes=[];chairs=[];centers=[];caption=message;AccessibleName=message;Invalidate();}
  public void SetPoints(RoomPoint[] points){if(mapped.SequenceEqual(points))return;mapped=points.ToArray();if(collectionGuide)guide=RoomCollectionGuide.Create(mapped);Invalidate();}
  public void Feedback(string text,Color color){feedback=text;feedbackColor=color;feedbackUntil=DateTime.UtcNow.AddSeconds(5);Invalidate();}
- public void SceneOverlay(PointF[] features,int targetIndex,PointF? centre,bool roomView,SceneObject[] objects){sceneMode=true;sceneFeatures=features.Where((_,i)=>i%Math.Max(1,features.Length/160)==0).Take(160).ToArray();sceneTarget=targetIndex;sceneCentre=centre;sceneRoom=roomView;sceneObjects=objects;caption=features.Length>0?$"{features.Length} fixed-feature matches · objects excluded":"Looking for fixed room detail · objects excluded";AccessibleName=caption;overlay=Color.LightSeaGreen;Invalidate();}
+ public void SceneOverlay(PointF[] features,int targetIndex,PointF? centre,bool roomView,SceneObject[] objects,SceneTarget[]? targets=null){sceneMode=true;sceneTargets=targets?.ToArray()??[];sceneFeatures=features.Where((_,i)=>i%Math.Max(1,features.Length/160)==0).Take(160).ToArray();sceneTarget=targetIndex;sceneCentre=centre;sceneRoom=roomView;sceneObjects=objects;caption=features.Length>0?$"{features.Length} fixed-feature matches · objects excluded":"Looking for fixed room detail · objects excluded";AccessibleName=caption;overlay=Color.LightSeaGreen;Invalidate();}
  protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=SmoothingMode.AntiAlias;
   if(frame==null){TextRenderer.DrawText(g,caption,Font,ClientRectangle,ForeColor,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.WordBreak|TextFormatFlags.EndEllipsis);return;}
   float scale=Math.Min(Width/(float)frame.Width,Height/(float)frame.Height);var view=new RectangleF((Width-frame.Width*scale)/2,(Height-frame.Height*scale)/2,frame.Width*scale,frame.Height*scale);g.DrawImage(frame,view);
@@ -48,7 +48,7 @@ internal sealed class PreviewSurface : Control {
    using var objectFill=new SolidBrush(Color.FromArgb(80,200,130,40));using var objectPen=new Pen(Color.Goldenrod,1);
    foreach(var o in sceneObjects){float x=view.X+(float)o.X/frame.Width*view.Width,y=view.Y+(float)o.Y/frame.Height*view.Height,w=(float)o.Width/frame.Width*view.Width,h=(float)o.Height/frame.Height*view.Height;g.FillRectangle(objectFill,x,y,w,h);g.DrawRectangle(objectPen,x,y,w,h);g.DrawString($"{o.Kind} {o.Confidence:P0}",Font,Brushes.Gold,x,y);}
    foreach(var point in sceneFeatures){var p=Screen(point);g.FillEllipse(Brushes.Aquamarine,p.X-2,p.Y-2,4,4);}
-   if(sceneRoom){for(int i=0;i<SceneScanPolicy.Targets.Length;i++){var t=SceneScanPolicy.Targets[i];var p=Screen(new((float)t.X,(float)t.Y));using var pen=new Pen(i==sceneTarget?Color.Gold:Color.LightSlateGray,i==sceneTarget?3:1);g.DrawEllipse(pen,p.X-13,p.Y-13,26,26);TextRenderer.DrawText(g,i==0?"C":i.ToString(),Font,new Point((int)p.X-5,(int)p.Y-8),i==sceneTarget?Color.Gold:Color.White);}if(sceneCentre is {} centre){var p=Screen(centre);using var pen=new Pen(Color.Aqua,3);g.DrawLine(pen,p.X-8,p.Y,p.X+8,p.Y);g.DrawLine(pen,p.X,p.Y-8,p.X,p.Y+8);}}
+   if(sceneRoom){for(int i=0;i<sceneTargets.Length;i++){var t=sceneTargets[i];var p=Screen(new((float)t.X,(float)t.Y));using var pen=new Pen(i==sceneTarget?Color.Gold:Color.LightSlateGray,i==sceneTarget?3:1);g.DrawEllipse(pen,p.X-13,p.Y-13,26,26);TextRenderer.DrawText(g,i==0?"C":i.ToString(),Font,new Point((int)p.X-5,(int)p.Y-8),i==sceneTarget?Color.Gold:Color.White);}if(sceneCentre is {} centre){var p=Screen(centre);using var pen=new Pen(Color.Aqua,3);g.DrawLine(pen,p.X-8,p.Y,p.X+8,p.Y);g.DrawLine(pen,p.X,p.Y-8,p.X,p.Y+8);}}
   }else using(var chairPen=new Pen(Color.SteelBlue,1)){foreach(var b in chairs){float x=view.X+b.X*view.Width,y=view.Y+b.Y*view.Height;g.DrawRectangle(chairPen,x,y,b.Width*view.Width,b.Height*view.Height);g.DrawString("chair",Font,Brushes.LightSteelBlue,x,y);}}
   var activeColor=DateTime.UtcNow<feedbackUntil?feedbackColor:overlay;using var outline=new Pen(activeColor,2);foreach(var b in boxes)g.DrawRectangle(outline,view.X+b.X*view.Width,view.Y+b.Y*view.Height,b.Width*view.Width,b.Height*view.Height);
   foreach(var c in centers)g.DrawEllipse(outline,view.X+c.X*view.Width-4,view.Y+c.Y*view.Height-4,8,8);

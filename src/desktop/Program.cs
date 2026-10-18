@@ -80,6 +80,7 @@ internal sealed class Settings {
  public SceneReference? SceneHome {get;set;}
  public string? RoomMapSceneId {get;set;}
  public string? GuidedPlacementId {get;set;}
+ public string? PendingSceneScanId {get;set;}
  public bool CameraPlacementChanged {get;set;}
 }
 internal sealed class CameraEngine {

@@ -14,6 +14,7 @@ internal sealed partial class ControllerForm {
   if(sceneDialog is {IsDisposed:false}){sceneDialog.Activate();return;}
   sceneDialog=new(ScanRoomScene,()=>{if(sceneScanning)Cancel("Stop scan or scan window closed");},CamerasMoved,()=>{if(sceneScanning){SceneStatus("Scan in progress","Stop the scan before collecting points.",true);return;}OpenCalibration();},ShowSceneReport,BeginGuidedCalibration);
   sceneDialog.Configure(nativeOff.Checked);sceneDialog.Show(this);
+  if(settings.PendingSceneScanId!=null){SceneStatus("New scan incomplete","Start a fresh scan. Previous calibration is archived and will not be reused.",false);return;}
   if(settings.GuidedPlacementId!=null){SceneStatus("Guided placement · empty-room scan incomplete","Collect person points to measure recovery coverage. Start a new setup whenever a mount moves.",false);return;}
   SceneStatus(settings.SceneHome==null?"Ready · room scene setup":"Scene reference saved",settings.SceneHome==null?"Start the spoken countdown, then leave both camera views.":"Confirm the mounts are unchanged, or scan again after moving either camera.",false);
  }
@@ -25,12 +26,12 @@ internal sealed partial class ControllerForm {
   if(sceneScanning)return;
   calibrationDialog?.Close();
   Cancel("Preparing guided calibration");
-  var oldScene=settings.SceneHome;var oldGuided=settings.GuidedPlacementId;bool oldChanged=settings.CameraPlacementChanged;
+  var oldScene=settings.SceneHome;var oldGuided=settings.GuidedPlacementId;var oldPending=settings.PendingSceneScanId;bool oldChanged=settings.CameraPlacementChanged;
   try{
    // This is a new placement identity, not a successful empty-room scan.
    // PrepareSceneMap archives the old person map before new capture begins.
-   settings.SceneHome=null;settings.GuidedPlacementId=Guid.NewGuid().ToString("N");settings.CameraPlacementChanged=false;PersistSettings();
-  }catch(Exception e){settings.SceneHome=oldScene;settings.GuidedPlacementId=oldGuided;settings.CameraPlacementChanged=oldChanged;SceneStatus("Guided setup could not start",e.Message,false);return;}
+   settings.SceneHome=null;settings.GuidedPlacementId=Guid.NewGuid().ToString("N");settings.PendingSceneScanId=null;settings.CameraPlacementChanged=false;PersistSettings();
+  }catch(Exception e){settings.SceneHome=oldScene;settings.GuidedPlacementId=oldGuided;settings.PendingSceneScanId=oldPending;settings.CameraPlacementChanged=oldChanged;SceneStatus("Guided setup could not start",e.Message,false);return;}
   sceneUnmoved.Enabled=true;sceneUnmoved.Checked=true;roomAlignment=null;
   SceneStatus("Guided placement · empty-room scan incomplete","No background boundaries measured. Capture at least four spread person positions before testing recovery.",false);
   OpenCalibration();
@@ -39,7 +40,7 @@ internal sealed partial class ControllerForm {
   RequireScene(true);var placement=SceneScanPolicy.PlacementId(settings)!;if(settings.RoomMapSceneId==placement)return;
   ArchiveRoomMap("New scene placement");
   var oldPoints=settings.RoomPoints;var oldPrevious=settings.PreviousRoomPoints;int oldVersion=settings.RoomMapVersion;var oldPlacement=settings.RoomMapSceneId;
-  try{settings.PreviousRoomPoints=oldPoints;settings.RoomPoints=[];settings.RoomMapVersion=1;settings.RoomMapSceneId=placement;PersistSettings();}
+  try{if(oldPoints.Length>0)settings.PreviousRoomPoints=oldPoints;settings.RoomPoints=[];settings.RoomMapVersion=1;settings.RoomMapSceneId=placement;PersistSettings();}
   catch{settings.RoomPoints=oldPoints;settings.PreviousRoomPoints=oldPrevious;settings.RoomMapVersion=oldVersion;settings.RoomMapSceneId=oldPlacement;throw;}
  }
  void ArchiveRoomMap(string reason){
@@ -55,11 +56,17 @@ internal sealed partial class ControllerForm {
  async void ScanRoomScene(int seconds,bool nativeDisabled){
   if(sceneScanning)return;
   if(!nativeDisabled){SceneStatus("Tracking must be off","Turn off the Link's built-in tracking, then check its box.",false);return;}
-  nativeOff.Checked=true;sceneScanning=true;bool success=false,cancelled=false;string failure="Scan did not start.";var evidence=new List<object>();sceneEvidence=evidence;sceneCancelReason=null;var startedUtc=DateTime.UtcNow;var anchors=new List<SceneAnchor>();Pose? scanOrigin=null;
+  nativeOff.Checked=true;sceneScanning=true;bool success=false,cancelled=false;string failure="Scan did not start.";var evidence=new List<object>();sceneEvidence=evidence;sceneCancelReason=null;var startedUtc=DateTime.UtcNow;var anchors=new List<SceneAnchor>();var verifiedTargets=new List<SceneTarget>();SceneTarget[] targets=[SceneTargetDiscovery.Centre];string? scanId=null;Pose? scanOrigin=null;
   await using var scanFeeds=new CameraFeeds(sceneDetail:true){AllowObsFallback=false};
   try{
-   SetScenePhase("preparing");sceneDialog?.Anchors([]);SceneStatus("Opening cameras","Preparing detailed previews before the leave-room countdown.",true);
-   calibrationAudio.ValidateSceneAssets();PausePreviews();await feeds.StopCapture();
+   SetScenePhase("preparing");
+   calibrationAudio.ValidateSceneAssets();calibrationDialog?.Close();PausePreviews();
+   scanId=FreshSceneScan.Begin(settings,Path.Combine(CommunityProfile.DataDirectory,"preserved-maps"),PersistSettings);
+   sceneUnmoved.Checked=false;sceneUnmoved.Enabled=false;mainRoomPreview.SetPoints([]);
+   sceneDialog?.ResetForScan();sceneDialog?.Targets(targets);
+   RecordSceneEvent(new{type="fresh-scan",scanId,previousMeasurementsReused=false});
+   SceneStatus("Fresh scan · opening cameras","Previous calibration archived. Finding new features and target locations.",true);
+   await feeds.StopCapture();
    await Manual(async ct=>{
     trackingMoving=true;sceneCancelReason=null;
     try{
@@ -84,17 +91,33 @@ internal sealed partial class ControllerForm {
      if(state.NativeTrackingEnabled!=false)throw new IOException("Built-in tracking turned on during the countdown; scene scan stopped.");
      origin=CurrentPose();returnPose=origin;scanOrigin=origin;
      RecordSceneEvent(new{type="scan-origin",pose=origin,atUtc=DateTime.UtcNow});
-     // Starting a scan rotates the gimbal, not the camera mount. Failed scans
-     // must not invalidate an otherwise unchanged existing room map.
+     // Only this generation's fresh frames and anchors may complete the scan.
+     // Failure or cancellation leaves older calibration archived and inactive.
      try{
       DateTime after=DateTime.UtcNow;
-      for(int targetIndex=0;targetIndex<SceneScanPolicy.Targets.Length;targetIndex++){
-       var (x,y,name)=SceneScanPolicy.Targets[targetIndex];bool reached=false,limited=false;double previousError=double.MaxValue;int notImproving=0,matchMisses=0;SceneAnchor? lastSupported=null;
-       // Each quadrant starts from the optically verified centre, preserving
-       // overlap instead of sweeping diagonally between distant corners.
-       if(targetIndex>1){var startHome=anchors[0];state=await engine.Execute(new(Target:new(startHome.Pan,startHome.Tilt,startHome.Zoom),DurationMs:1000),token);after=DateTime.UtcNow;}
+      async Task ReturnToFreshCentre(){
+       var beforeRoom=await scanFeeds.RoomFrame(token);var beforeLink=await scanFeeds.LinkFrame(token);
+       var br=await detector.Infer(beforeRoom.Bytes,token,.35);var bl=await detector.Infer(beforeLink.Bytes,token,.35);
+       SceneScanPolicy.Fresh(beforeRoom,DateTime.UtcNow,after);SceneScanPolicy.Fresh(beforeLink,DateTime.UtcNow,after);
+       if(br.Error!=null||bl.Error!=null||br.People.Length!=0||bl.People.Length!=0)throw new IOException("Leave both views empty before continuing the fresh scan.");
+       state=await engine.Execute(new(ReadNativeTracking:true),token);if(state.NativeTrackingEnabled!=false)throw new IOException("Built-in tracking changed; scan stopped.");
+       SceneScanPolicy.Fresh(beforeRoom,DateTime.UtcNow,after);SceneScanPolicy.Fresh(beforeLink,DateTime.UtcNow,after);
+       var home=anchors[0];var pose=new Pose(home.Pan,home.Tilt,home.Zoom);
+       if(CurrentPose()!=pose){state=await engine.Execute(new(Target:pose,DurationMs:1000),token);after=DateTime.UtcNow;}
+       await Task.Delay(350,token);var rf=await scanFeeds.RoomFrame(token);var lf=await scanFeeds.LinkFrame(token);
+       var rr=await detector.Infer(rf.Bytes,token,.35);var lr=await detector.Infer(lf.Bytes,token,.35);
+       SceneScanPolicy.Fresh(rf,DateTime.UtcNow,after);SceneScanPolicy.Fresh(lf,DateTime.UtcNow,after);
+       var check=await Task.Run(()=>SceneRegistration.Match(rf.Bytes,lf.Bytes,rr,lr),token);
+       if(Math.Abs(check.X-home.X)>.035||Math.Abs(check.Y-home.Y)>.035)throw new IOException("Fresh centre no longer aligns; scan stopped.");
+       RecordSceneEvent(new{type="centre-reverified",scanId,check.X,check.Y,check.Inliers});
+      }
+      for(int targetIndex=0;targetIndex<targets.Length;targetIndex++){
+       var (x,y,name)=targets[targetIndex];bool reached=false,limited=false;double previousError=double.MaxValue;int notImproving=0,matchMisses=0;SceneAnchor? lastSupported=null;string? skipped=null;
+       // Each candidate starts from the freshly verified centre, preserving
+       // overlap between measurements of distinct fixed features.
+       if(targetIndex>0)await ReturnToFreshCentre();
        for(int attempt=0;attempt<35;attempt++){
-        SceneStatus($"Scanning {name} · {anchors.Count}/5 verified",limited?"Verifying a reachable boundary; this image edge remains unmeasured.":"Matching fixed room details; detected objects are excluded.",true);await Task.Delay(250,token);
+        SceneStatus($"Scanning {name} · {anchors.Count} verified",limited?"Verifying a reachable boundary; this image edge remains unmeasured.":"Matching fixed room details; detected objects are excluded.",true);await Task.Delay(250,token);
         var room=await scanFeeds.RoomFrame(token);var link=await scanFeeds.LinkFrame(token);var r=await detector.Infer(room.Bytes,token,.35);var l=await detector.Infer(link.Bytes,token,.35);
         SceneScanPolicy.Fresh(room,DateTime.UtcNow,after);SceneScanPolicy.Fresh(link,DateTime.UtcNow,after);
         if(sceneDialog is {IsDisposed:false})sceneDialog.Frames(room.Bytes,link.Bytes,r,l,null,targetIndex);
@@ -106,7 +129,8 @@ internal sealed partial class ControllerForm {
         catch(IOException e){
          RecordSceneEvent(new{type="alignment-held",target=name,attempt,reason=e.Message});
          if(++matchMisses>=4){
-          if(limited||lastSupported==null||r.People.Length!=0||l.People.Length!=0)throw;
+          if(r.People.Length!=0||l.People.Length!=0||targetIndex==0)throw;
+          if(limited||lastSupported==null){skipped=e.Message;break;}
           // Feature loss defines a possible overlap boundary, not a saved point.
           // Revisit the last supported pose only while capture and controls are
           // healthy, then demand two fresh optical checks before accepting it.
@@ -129,36 +153,36 @@ internal sealed partial class ControllerForm {
          SceneScanPolicy.Fresh(room2,DateTime.UtcNow,room.ReadAtUtc!.Value);SceneScanPolicy.Fresh(link2,DateTime.UtcNow,link.ReadAtUtc!.Value);
          var check=await Task.Run(()=>{SceneRegistration.Stable(room.Bytes,room2.Bytes,r,r2);SceneRegistration.Stable(link.Bytes,link2.Bytes,l,l2);return SceneRegistration.Match(room2.Bytes,link2.Bytes,r2,l2);},token);
          if(Math.Abs(check.X-match.X)>.025||Math.Abs(check.Y-match.Y)>.025||Math.Abs(x-check.X)>=.065||Math.Abs(y-check.Y)>=.065)throw new IOException("Scene alignment is unstable. Clear the room and retry.");
-         state=await engine.Execute(new(),token);var pose=CurrentPose();anchors.Add(new(check.X,check.Y,pose.Pan,pose.Tilt,pose.Zoom,check.Inliers,check.InlierRatio,r2.Objects,l2.Objects,limited));RecordSceneEvent(new{type="anchor-verified",target=name,anchor=anchors[^1]});sceneDialog?.Anchors(anchors);reached=true;break;
+         state=await engine.Execute(new(),token);var pose=CurrentPose();anchors.Add(new(check.X,check.Y,pose.Pan,pose.Tilt,pose.Zoom,check.Inliers,check.InlierRatio,r2.Objects,l2.Objects,limited));verifiedTargets.Add(targets[targetIndex]);RecordSceneEvent(new{type="anchor-verified",scanId,target=name,anchor=anchors[^1]});sceneDialog?.Anchors(anchors);if(targetIndex==0){targets=SceneTargetDiscovery.Discover(check);RecordSceneEvent(new{type="fresh-target-plan",scanId,targets});sceneDialog?.Targets(targets);}reached=true;break;
         }
-        if(!limited&&targetIndex>0&&SceneScanPolicy.BoundaryCandidate(match,targetIndex,anchors[0])){var pose=CurrentPose();lastSupported=new(match.X,match.Y,pose.Pan,pose.Tilt,pose.Zoom,match.Inliers,match.InlierRatio,BoundaryLimited:true);}
+        if(!limited&&targetIndex>0&&SceneScanPolicy.BoundaryCandidate(match,targetIndex,anchors[0],targets)){var pose=CurrentPose();lastSupported=new(match.X,match.Y,pose.Pan,pose.Tilt,pose.Zoom,match.Inliers,match.InlierRatio,BoundaryLimited:true);}
         if(error>=previousError-.002)notImproving++;else notImproving=0;previousError=error;if(notImproving>=4)throw new IOException($"Cannot reach {name} reliably. Check overlap and camera direction settings.");
         state=await engine.Execute(new(),token);var next=SceneScanPolicy.Next(match,x,y,state,origin,reversePan.Checked,reverseTilt.Checked);
         SceneScanPolicy.Fresh(room,DateTime.UtcNow,after);SceneScanPolicy.Fresh(link,DateTime.UtcNow,after);
         state=await engine.Execute(new(Target:next,DurationMs:180),token);after=DateTime.UtcNow;
        }
-       if(!reached)throw new IOException($"{name} scan timed out; no scene reference saved.");
+       if(!reached){if(targetIndex==0)throw new IOException("Fresh centre could not be established.");RecordSceneEvent(new{type="target-skipped",scanId,target=name,reason=skipped??"Target timed out; not included in map"});}
       }
-      SceneScanPolicy.ValidateAnchors(anchors);SetScenePhase("return-to-centre");var home=anchors[0];state=await engine.Execute(new(Target:new(home.Pan,home.Tilt,home.Zoom),DurationMs:1000),token);
+      SceneScanPolicy.ValidateAnchors(anchors,verifiedTargets);SetScenePhase("return-to-centre");await ReturnToFreshCentre();
       var homeMovedAt=DateTime.UtcNow;await Task.Delay(350,token);var homeRoom=await scanFeeds.RoomFrame(token);var homeLink=await scanFeeds.LinkFrame(token);var hr=await detector.Infer(homeRoom.Bytes,token,.35);var hl=await detector.Infer(homeLink.Bytes,token,.35);
       SceneScanPolicy.Fresh(homeRoom,DateTime.UtcNow,homeMovedAt);SceneScanPolicy.Fresh(homeLink,DateTime.UtcNow,homeMovedAt);
       var homeMatch=await Task.Run(()=>SceneRegistration.Match(homeRoom.Bytes,homeLink.Bytes,hr,hl),token);if(Math.Abs(homeMatch.X-.5)>=.065||Math.Abs(homeMatch.Y-.5)>=.065)throw new IOException("Return to centre did not align optically; scene was not saved.");
       evidence.Add(new{type="home-verification",homeMatch.X,homeMatch.Y,homeMatch.Inliers,homeMatch.InlierRatio});if(sceneDialog is {IsDisposed:false})sceneDialog.Frames(homeRoom.Bytes,homeLink.Bytes,hr,hl,homeMatch,0);
-      settings.SceneHome=new(Guid.NewGuid().ToString("N"),DateTime.UtcNow,anchors.ToArray());settings.GuidedPlacementId=null;settings.CameraPlacementChanged=false;sceneUnmoved.Checked=true;sceneUnmoved.Enabled=true;
-      try{PersistSettings();}catch{settings.CameraPlacementChanged=true;sceneUnmoved.Checked=false;throw;}
+      FreshSceneScan.Complete(settings,scanId!,anchors.ToArray(),verifiedTargets.ToArray(),PersistSettings);
+      sceneUnmoved.Checked=true;sceneUnmoved.Enabled=true;
       roomAlignment=null;success=true;
      }catch(Exception e){failure=e.Message;throw;}
-     // Failure stops at the current pose. Previous framing is an explicit manual
+     // A fatal failure stops at the current pose. Previous framing is an explicit manual
      // action; never issue a recovery move after an error or disconnect.
     }catch(OperationCanceledException){cancelled=ct.IsCancellationRequested;failure=cancelled?"Stopped during "+scenePhase+" · "+(sceneCancelReason??"camera action cancelled"):"Timed out during "+scenePhase;throw;}
     catch(Exception e){failure=e.Message;throw;}
     finally{trackingMoving=false;}
    });
-   if(success){SceneStatus("Room scan complete · you may return",anchors.Any(a=>a.BoundaryLimited)?"Five verified anchors inside the shared view. Some image edges remain unmeasured; collect person-tracking points next.":"Five measured anchors saved. Collect person-tracking points next.",false);await calibrationAudio.Announce("scene-complete.wav",lifetime.Token);}
-   else{if(!cancelled&&scanOrigin!=null)returnPose=scanOrigin;SceneStatus(cancelled?"Scan cancelled · you may return":"Scan not completed · you may return",$"{anchors.Count}/5 verified · "+failure,false);await calibrationAudio.Announce(cancelled?"scene-cancelled.wav":"scene-failed.wav",lifetime.Token);}
+   if(success){SceneStatus("Room scan complete · you may return",anchors.Any(a=>a.BoundaryLimited)?$"{anchors.Count} fresh points verified in the shared view. Some limits remain unmeasured; collect new person points next.":$"{anchors.Count} fresh measured scene points saved. Collect new person points next.",false);await calibrationAudio.Announce("scene-complete.wav",lifetime.Token);}
+   else{if(!cancelled&&scanOrigin!=null)returnPose=scanOrigin;SceneStatus(cancelled?"Scan cancelled · you may return":"Scan not completed · you may return",$"{anchors.Count} verified · "+failure,false);await calibrationAudio.Announce(cancelled?"scene-cancelled.wav":"scene-failed.wav",lifetime.Token);}
   }catch(Exception e){failure=e.Message;SceneStatus(success?"Scan complete · announcement unavailable":"Scene setup stopped",failure,false);}
   finally{
-   try{await scanFeeds.StopCapture();Directory.CreateDirectory(DiagnosticsDirectory);lastSceneReport=Path.Combine(DiagnosticsDirectory,$"scene-scan-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");File.WriteAllText(lastSceneReport,JsonSerializer.Serialize(new{startedUtc,finishedUtc=DateTime.UtcNow,phase=scenePhase,success,cancelled,reason=success?"complete":failure,reference=success?settings.SceneHome:null,verifiedAnchors=anchors,observations=evidence},Program.Json));foreach(var old in Directory.GetFiles(DiagnosticsDirectory,"scene-scan-*.json").OrderByDescending(File.GetLastWriteTimeUtc).Skip(10))File.Delete(old);}catch(Exception e){sceneStatus.Text+=" · Report could not be saved: "+e.Message;}
+   try{await scanFeeds.StopCapture();Directory.CreateDirectory(DiagnosticsDirectory);lastSceneReport=Path.Combine(DiagnosticsDirectory,$"scene-scan-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.json");File.WriteAllText(lastSceneReport,JsonSerializer.Serialize(new{scanId,targets,previousMeasurementsReused=false,startedUtc,finishedUtc=DateTime.UtcNow,phase=scenePhase,success,cancelled,reason=success?"complete":failure,reference=success?settings.SceneHome:null,verifiedAnchors=anchors,observations=evidence},Program.Json));foreach(var old in Directory.GetFiles(DiagnosticsDirectory,"scene-scan-*.json").OrderByDescending(File.GetLastWriteTimeUtc).Skip(10))File.Delete(old);}catch(Exception e){sceneStatus.Text+=" · Report could not be saved: "+e.Message;}
    sceneEvidence=null;scenePhase="idle";sceneScanning=false;
   }
  }
