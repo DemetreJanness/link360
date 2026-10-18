@@ -89,3 +89,30 @@ manual override on the real device, unplug/reconnect, contention/native-mode cha
 long-duration load, and hardware/driver stall behavior. Native firmware AI smoothness
 is a separate behavior; this capped host-side velocity adapter does not reproduce
 its internal algorithm or establish its higher speed range.
+
+## Movement run and cleanup
+
+Follow-up live run `room-test-20261018-223154-74c99763` completed: 468 samples,
+Acer span 0.4155 x / 0.2035 y, no missing/ambiguous room subjects. During the
+forced 35–40s Acer interval, 46 of 60 samples reported nonzero speeds and
+measured pan ranged -15 to -2, establishing actual Acer-directed movement.
+Twelve takeover samples were outside-map (34 over the full run), so coverage
+still limits recovery. Fresh Link error RMS was 0.1713 normalized during this
+substantial-motion run; this is not a controlled latency benchmark.
+
+User feedback: "Smoother but still too slow." The native velocity path improves
+the perceived stepping, but fast catch-up acceptance is not met. No higher
+levels were enabled just to increase a gain. Higher native magnitude levels
+need focused bounded physical validation before raising the current cap of 4.
+The final ten seconds still included correction (31/70 nonzero speed samples),
+so use the preceding stationary run, not this moving sequence, as the quiet-hold
+evidence. We did not record video in either live run.
+
+Physical manual override check: start native-speed tracking, then send the
+registered Ctrl+Alt+Shift+Right nudge. UI reported "Local AI tracking off ·
+manual override"; independent native GET read both speed axes 0 with no error.
+Community UI was closed normally and no LINK360 processes remained. All four
+protected file hashes matched the pre-test snapshot, including the real community
+settings. Primary development and the archived ten points remain untouched.
+OBS source was reactivated; Virtual Camera startup is verified separately
+because the first immediate status can still report its asynchronous transition.
