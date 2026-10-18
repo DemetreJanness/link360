@@ -191,3 +191,22 @@ local AppData; no room images, settings or full private reports are committed.
 This verifies automatic measurement and persistence. Live subject recovery with
 this background-derived partial map remains the next test, not yet a passed
 result. OBS sharing restoration is tracked separately from scan completion.
+## First recovery check with the four-point map
+
+The authorized 60-second test completed at 20:55:11 UTC with both direct feeds
+fresh throughout and no missing/ambiguous Acer samples. The initial 15-second
+seated phase issued zero movement requests. During the forced Acer interval
+(35–40 seconds), all 22 sampled positions were outside the measured hull and
+issued no move. Therefore this run did not physically verify Acer correction.
+The Link subsequently returned to centred framing. The final ten seconds still
+contained 18 movement requests; zero hunting or final stationary smoothness is
+not established. No test video was recorded in this run.
+
+The immediate limitation is coverage of the user's movement positions, not the
+point-count gate or a missing recovery-map connection. Future work should target
+additional measured coverage where the test reports outside-map positions, or
+validate coarse recovery from an in-map position. Do not claim that relaxing
+coverage proved full-room recovery. Keep the four measured pairs; do not reuse
+the old mount's ten points or fabricate extra measurements. LINK360 tracking and
+previews were paused after testing and OBS capture/Virtual Camera restarted.
+Work stops before the user's 40%-remaining usage threshold (last read: 41%).
