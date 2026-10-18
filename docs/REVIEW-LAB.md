@@ -1,72 +1,87 @@
-# LINK360 review lab
+# LINK360: two maintained builds
 
-This checkout is for evaluating outside review findings and proposed patches.
-The reviewer runs their tools on their own computer. No external review API or
-credentials are needed by LINK360.
+| Version | Local branch | Source | Purpose |
+| --- | --- | --- | --- |
+| Local development | `codex/local-development` | Original `Link` workspace | Continue our development independently |
+| Community review | `codex/community-build` | This separate managed worktree; incoming changes from `origin/main` | Build and evaluate the friend's committed findings |
 
-Baseline: `1cc6b3cd180d0915633fd7ad1e7ec112455c53ed` (public `main` when this lab
-was created). The lab branch is `codex/review-lab`. The normal development
-checkout and installed application are separate and remain unchanged.
+Remote: https://github.com/DemetreJanness/link360.git. The friend commits to
+GitHub `main` on their end. There is no review API integration on this machine.
+The published starting point is `1cc6b3cd180d0915633fd7ad1e7ec112455c53ed`.
 
-## Run the baseline checks
+The local development branch has no upstream, so a plain `git pull` there cannot
+bring in community changes. The community branch tracks `origin/main` and also
+contains local review infrastructure. Do not push this branch over GitHub main.
+Neither checkout auto-updates, merges, launches, or publishes anything.
 
-From this checkout in PowerShell:
+## Build and check the community version
+
+From this checkout:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-review-lab.ps1
 ```
 
-The command restores from the existing local NuGet package cache, builds the
-Windows desktop project through the tests' project reference, and runs only
-the default fixture tests. It does not launch the application or pass any
-hardware-probe flags. Logs and build outputs stay in this checkout under
-`artifacts/review-lab/`; fixture files stay under its ignored `.rea-tools/`.
-A missing cached dependency causes restore to fail; this command does not
-add an online feed. Dependency security auditing is not part of this offline run.
+This uses the local NuGet cache, builds the desktop project and default fixture
+tests, and runs those tests without camera hardware, OBS or the vendor app.
+Outputs and logs are ignored under `artifacts/review-lab/`. Temporary fixtures
+stay under `.rea-tools/`. Missing cached packages fail restore rather than add
+an online feed. Dependency security auditing is not part of this offline run.
 
-No personal settings, room points, videos, captures or API keys were copied
-into this checkout. The default suite uses synthetic room points and local
-bundled models. A passing result does not prove physical tracking smoothness.
+When a camera test is wanted, first close the normal LINK360 application, then:
 
-## Receive and evaluate a proposed fix
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-community.ps1
+```
 
-Ask the reviewer to send a GitHub pull request (preferred), a branch/commit
-URL, a patch, or a written finding with file locations. A useful proposal states
-its baseline commit, what is wrong, what changes, and how it was tested. Keep
-independent fixes in separate commits, especially motion, detection and UI work.
+The community window says **Community review build** and **COMMUNITY REVIEW**.
+It reads and writes `%LOCALAPPDATA%\LINK360-Community\settings.local.json` and
+stores diagnostics/video under that profile's `diagnostics` folder. The normal
+app retains its executable-local settings and `%LOCALAPPDATA%\LINK360` logs.
+A one-time private copy of the original settings seeds the community profile;
+subsequent changes do not synchronize in either direction. Never commit either
+settings file, the room map, recordings or captures.
 
-1. Create a proposal branch from this lab, for example
-   `git switch -c codex/review/steady-hold`.
-2. Fetch the specified proposal into the lab. Inspect the diff, build scripts,
-   package changes and test entry points before executing anything. For a PR
-   against this repository, `git fetch origin pull/<number>/head` fetches its
-   commits without changing either working tree. Inspect `FETCH_HEAD`; apply
-   only the intended commits. Do not merge or pull automatically into `main`.
-3. Run the default checks above and focused tests for the actual finding.
-   Record the reviewed SHA, before/after observations, failed cases and limits.
-   Keep calibration and media private. Do not treat simulated success as a
-   physical camera result.
-4. For hardware testing, schedule a separate session: close the normal app,
-   isolate the experimental diagnostics/settings first, and use one camera
-   controller at a time. Preserve the original ten-point settings. Never
-   replace them just to make an experimental test pass.
-5. Bring back only accepted implementation/test commits on an integration
-   branch from the current development head. Re-run checks there and keep a
-   revertable commit per fix. Leave this lab's setup commit out of that selection.
-   No automatic integration or publication is configured.
+The shared `Local\LINK360.Desktop` mutex deliberately allows only one interactive
+LINK360 controller at a time. Cameras, hotkeys, OBS and Discord are shared
+Windows resources, not virtual copies. Hardware tests remain sequential.
 
-## Isolation limits
+## Receive committed changes from the friend
 
-A Git worktree separates source, build outputs and executable-local settings;
-it shares Git objects, installed dependencies and the Windows hardware session.
-It is not an OS sandbox for untrusted code. Review proposed scripts and code
-before building or running them.
+In the community checkout only:
 
-Do not launch `scripts/start-link360.ps1` or the lab's `LINK360.exe` for routine
-code review. The current UI registers global hotkeys and accesses camera/OBS
-state at startup, and application diagnostics use the shared local LINK360
-AppData directory. Those runtime paths have not been altered by this setup.
-The supplied test command uses the existing camera-independent default suite.
+```powershell
+git fetch --no-tags origin main
+git log --oneline HEAD..origin/main
+git diff HEAD...origin/main
+```
 
-There are no automatic camera tests, background review services, merges or
-uploads. The lab can remain here while normal development continues elsewhere.
+Inspect the new commits, build scripts, dependencies and test entry points
+before executing their code. To bring reviewed commits into the community build:
+
+```powershell
+git merge --no-ff --no-commit origin/main
+```
+
+Resolve conflicts deliberately, retaining `CommunityProfile` settings/log paths,
+the review label and the single-controller mutex. Build and run the local checks.
+Commit the resulting merge only after its scope and results are understood.
+Use `git merge --abort` to abandon an uncommitted merge. Do not force-reset the
+community branch to remote main; that would remove the local isolation layer.
+
+The check report records the local SHA and whether its tree had uncommitted
+changes. Record the incoming SHA and relevant before/after behavior when testing
+a proposal. Default fixtures do not establish physical movement quality.
+
+## Bring selected fixes into local development
+
+Use an integration branch from the current local development head and select
+only the implementation/test commits we accept. Re-run checks against our
+current development code, then integrate that result. Keep independent fixes
+in separate commits. Leave community profile and lab setup commits in this
+checkout; do not merge the whole community branch into local development.
+
+This is source/build/data separation, not an OS sandbox for untrusted code.
+Review code before running it. The ten original map points stay in the normal
+app's private settings; community tests cannot change that file through the
+community settings path.

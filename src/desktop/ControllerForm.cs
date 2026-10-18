@@ -59,11 +59,11 @@ internal sealed partial class ControllerForm : Form {
  RoomAlignment? roomAlignment;
  readonly Label syncStatus=new(){AutoSize=true,MaximumSize=new Size(248,0),Text="Sync is optional: centre your torso, pause, then sync. Applies this session only."};
  readonly CheckBox recordTestVideo=new(){Text="Save local test video (no audio)",AutoSize=true};
- static string DiagnosticsDirectory=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LINK360","diagnostics");
+ static string DiagnosticsDirectory=>CommunityProfile.DiagnosticsDirectory;
  public ControllerForm() {
-  Text="LINK360 · Link Studio"; Width=1380; Height=920; MinimumSize=new Size(1100,760);
+  Text=CommunityProfile.Title; Width=1380; Height=920; MinimumSize=new Size(1100,760);
   BackColor=SuiteTheme.Background;ForeColor=SuiteTheme.Text;Font=new Font("Segoe UI",10);
-  settingsFile=Path.Combine(AppContext.BaseDirectory,"settings.local.json");
+  Directory.CreateDirectory(CommunityProfile.DataDirectory); settingsFile=CommunityProfile.SettingsFile;
   try {settings=File.Exists(settingsFile)?JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsFile),Program.Json)!:new();if(settings.Presets.Length!=4)throw new Exception();}
   catch {settings=new();status.Text="Saved settings could not be read; existing file preserved.";}
   try{RoomMap.Fit(settings.RoomPoints);roomMode.Checked=true;}catch(IOException){}
@@ -71,7 +71,7 @@ internal sealed partial class ControllerForm : Form {
   trackingModeSelector.Items.AddRange(new object[]{"Software + Acer recovery","Software · Link only","Built-in AI · manual"});trackingModeSelector.SelectedIndex=roomMode.Checked?0:1;trackingModeSelector.SelectedIndexChanged+=(_,_)=>{Cancel();roomMode.Checked=trackingModeSelector.SelectedIndex==0;if(trackingModeSelector.SelectedIndex==2)trackingStatus.Text="Built-in AI · use palm activation; automatic restart is unavailable";};
   var shell=new TableLayoutPanel(){Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Padding=new Padding(0),Margin=new Padding(0)};shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,150));shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));Controls.Add(shell);
   var sidebar=new Panel(){Dock=DockStyle.Fill,BackColor=Color.FromArgb(17,23,32),Padding=new Padding(16,28,12,20)};shell.Controls.Add(sidebar,0,0);
-  var navigation=SuiteTheme.Stack();sidebar.Controls.Add(navigation);navigation.Controls.Add(SuiteTheme.Label("LINK360",19,true));navigation.Controls.Add(SuiteTheme.Label("LINK STUDIO",9,true,SuiteTheme.Muted));navigation.Controls.Add(new Panel(){Height=24,Width=1});
+  var navigation=SuiteTheme.Stack();sidebar.Controls.Add(navigation);navigation.Controls.Add(SuiteTheme.Label("LINK360",19,true));navigation.Controls.Add(SuiteTheme.Label("COMMUNITY REVIEW",9,true,SuiteTheme.Muted));navigation.Controls.Add(new Panel(){Height=24,Width=1});
   var content=new Panel(){Dock=DockStyle.Fill,Padding=new Padding(22,22,16,18)};shell.Controls.Add(content,1,0);
   var pages=new Dictionary<string,Panel>();var navButtons=new Dictionary<string,Button>();
   Panel Page(string name,string subtitle){var page=new Panel(){Dock=DockStyle.Fill,Visible=false,AutoScroll=true,BackColor=SuiteTheme.Background};pages[name]=page;content.Controls.Add(page);var header=new Panel(){Dock=DockStyle.Top,Height=90};header.Controls.Add(new Label(){Text=name,Font=new Font("Segoe UI",25,FontStyle.Bold),ForeColor=SuiteTheme.Text,AutoSize=true,Location=new Point(0,0)});header.Controls.Add(new Label(){Text=subtitle,ForeColor=SuiteTheme.Muted,AutoSize=true,Location=new Point(2,49)});page.Controls.Add(header);return page;}

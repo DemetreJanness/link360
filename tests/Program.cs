@@ -2,6 +2,7 @@ using System.Text.Json;
 using Link360;
 using Link360Desktop;
 
+if(args.Contains("--community-profile")){Console.WriteLine(JsonSerializer.Serialize(new {name=CommunityProfile.Title,settings=CommunityProfile.SettingsFile,diagnostics=CommunityProfile.DiagnosticsDirectory}));return;}
 if(args.Contains("--gpu-head-benchmark")){GpuHeadBenchmark.Run(args[1],args[2],!args.Contains("--cpu"));return;}
 if(args.Contains("--vision-model-info")){using var options=new Microsoft.ML.OnnxRuntime.SessionOptions();Microsoft.ML.OnnxRuntime.OrtEnv.Instance().DisableTelemetryEvents();using var session=new Microsoft.ML.OnnxRuntime.InferenceSession(Path.Combine(AppContext.BaseDirectory,"models","face_detection_yunet_2023mar.onnx"),options);Console.WriteLine(JsonSerializer.Serialize(new{inputs=session.InputMetadata.Select(x=>new{x.Key,x.Value.Dimensions,x.Value.SymbolicDimensions}),outputs=session.OutputMetadata.Select(x=>new{x.Key,x.Value.Dimensions,x.Value.SymbolicDimensions})}));return;}
 if(args.Contains("--scene-startup-probe")){await SceneStartupProbe.Run(args.Last());return;}
