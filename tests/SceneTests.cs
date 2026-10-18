@@ -39,6 +39,19 @@ internal static class SceneTests {
   var settingsJson=System.Text.Json.JsonSerializer.Serialize(new Settings{SceneHome=new("fixture",now,[privateAnchor])});Check(!settingsJson.Contains("cup")&&!settingsJson.Contains("RoomObjects"),"Object inventory leaked into project settings");
   var reportJson=System.Text.Json.JsonSerializer.Serialize(new{Objects=privateAnchor.RoomObjects});Check(reportJson.Contains("cup"),"Local report lost inventory evidence");
   var settings=new Settings{RoomPoints=[new(.2,.2,1,2)]};SceneScanPolicy.RequireScene(settings,false,false);Reject(()=>SceneScanPolicy.RequireScene(settings,false,true),"New point collection bypassed scene setup");settings.CameraPlacementChanged=true;Reject(()=>SceneScanPolicy.RequireScene(settings,true,false),"Moved cameras reused stale map");settings.CameraPlacementChanged=false;settings.SceneHome=new("scene",now,anchors);Reject(()=>SceneScanPolicy.RequireScene(settings,false,true),"Unconfirmed placement accepted");Reject(()=>SceneScanPolicy.RequireScene(settings,true,false),"Old map accepted after new scene");settings.RoomMapSceneId="scene";SceneScanPolicy.RequireScene(settings,true,false);Check(settings.RoomPoints.Length==1,"Scene gates changed saved points");
+  // Guided collection is a separate placement, never a fabricated scene scan.
+  var oldPoints=settings.RoomPoints.ToArray();var guided=new Settings{GuidedPlacementId="guided-new",RoomMapSceneId="old",RoomPoints=oldPoints};
+  SceneScanPolicy.RequireScene(guided,true,true);
+  Reject(()=>SceneScanPolicy.RequireScene(guided,true,false),"Old map reused for guided placement");
+  Reject(()=>SceneScanPolicy.RequireScene(guided,false,true),"Unconfirmed guided placement accepted");
+  guided.CameraPlacementChanged=true;Reject(()=>SceneScanPolicy.RequireScene(guided,true,true),"Moved guided placement collected points");Reject(()=>SceneScanPolicy.RequireScene(guided,true,false),"Moved guided placement tracked");
+  guided.CameraPlacementChanged=false;guided.RoomMapSceneId="guided-new";SceneScanPolicy.RequireScene(guided,true,false);
+  Check(guided.SceneHome==null&&guided.RoomPoints.SequenceEqual(oldPoints),"Guided policy fabricated anchors or changed old points");
+  var guidedJson=System.Text.Json.JsonSerializer.Serialize(guided);var reloaded=System.Text.Json.JsonSerializer.Deserialize<Settings>(guidedJson)!;SceneScanPolicy.RequireScene(reloaded,true,false);
+  Reject(()=>SceneScanPolicy.RequireScene(reloaded,false,false),"Reload silently confirmed guided mounts");
+  reloaded.GuidedPlacementId=" ";Reject(()=>SceneScanPolicy.RequireScene(reloaded,true,true),"Blank guided placement accepted");
+  reloaded.GuidedPlacementId="guided-new";reloaded.SceneHome=new("scene",now,anchors);Reject(()=>SceneScanPolicy.RequireScene(reloaded,true,true),"Conflicting scene and guided placements accepted");
+  Console.WriteLine("PASS: guided placement isolation, old-map rejection, mount changes, explicit confirmation and settings round trip");
   using var voice=new CalibrationAudio();voice.ValidateSceneAssets();Check(ObjectLabels.Name(41)=="cup"&&ObjectLabels.Name(56)=="chair"&&ObjectLabels.Name(79)=="toothbrush","Object labels do not match the pinned model");
   Console.WriteLine("PASS: scene registration, movable-object masking, motion rejection, freshness, bounded PTZ, five-anchor completion, placement gates, camera identity changes, capture detail and local voice assets");
  }

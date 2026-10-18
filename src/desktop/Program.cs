@@ -79,6 +79,7 @@ internal sealed class Settings {
  public RoomPoint[] PreviousRoomPoints {get;set;}=[];
  public SceneReference? SceneHome {get;set;}
  public string? RoomMapSceneId {get;set;}
+ public string? GuidedPlacementId {get;set;}
  public bool CameraPlacementChanged {get;set;}
 }
 internal sealed class CameraEngine {

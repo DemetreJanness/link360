@@ -3,10 +3,13 @@ namespace Link360Desktop;
 
 internal static class SceneScanPolicy {
  public static readonly (double X,double Y,string Name)[] Targets=[(.5,.5,"centre"),(.15,.2,"upper left"),(.85,.2,"upper right"),(.85,.8,"lower right"),(.15,.8,"lower left")];
+ public static string? PlacementId(Settings settings)=>settings.GuidedPlacementId??settings.SceneHome?.Id;
  public static void RequireScene(Settings settings,bool confirmed,bool collecting){
   if(settings.SceneHome!=null){ValidateAnchors(settings.SceneHome.Anchors);if(string.IsNullOrWhiteSpace(settings.SceneHome.Id))throw new IOException("Scene reference is invalid; run setup again.");}
-  if(settings.CameraPlacementChanged||settings.SceneHome!=null&&!confirmed||collecting&&settings.SceneHome==null)throw new IOException("Run Room scene setup first and confirm the camera mounts have not moved.");
-  if(!collecting&&settings.SceneHome!=null&&settings.RoomMapSceneId!=settings.SceneHome.Id)throw new IOException("Scene scanned · collect a new room map for this placement. Previous points are retained.");
+  if(settings.GuidedPlacementId!=null&&(string.IsNullOrWhiteSpace(settings.GuidedPlacementId)||settings.SceneHome!=null))throw new IOException("Calibration placement is invalid; start setup again.");
+  var placement=PlacementId(settings);
+  if(settings.CameraPlacementChanged||placement!=null&&!confirmed||collecting&&placement==null)throw new IOException("Start room scene setup or guided calibration, then confirm the camera mounts have not moved.");
+  if(!collecting&&placement!=null&&settings.RoomMapSceneId!=placement)throw new IOException("Collect a new room map for this placement. Previous points are retained.");
  }
  public static void Fresh(FeedFrame frame,DateTime now,DateTime after){
   if(frame.ReadAtUtc is not DateTime read||read<=after||read>now.AddMilliseconds(100)||now-read>TimeSpan.FromMilliseconds(900))throw new IOException("Waiting for fresh direct-camera frames; no scene movement sent.");

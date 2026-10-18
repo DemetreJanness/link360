@@ -97,7 +97,7 @@ internal sealed partial class ControllerForm : Form {
   inspectorBody.Controls.Add(new Label(){AutoSize=true,MaximumSize=new Size(248,0),ForeColor=SuiteTheme.Muted,Text="Lower = more lenient. Higher = stricter. Live scores appear on previews. Scores are model estimates; body-shape guards remain active. Session only."});
   inspectorBody.Controls.Add(SuiteTheme.Label("ROOM SCENE SETUP",9,true,SuiteTheme.Accent));
   inspectorBody.Controls.Add(InspectorButton("Room scene setup",OpenSceneSetup));inspectorBody.Controls.Add(sceneUnmoved);inspectorBody.Controls.Add(sceneStatus);
-  sceneUnmoved.Enabled=settings.SceneHome!=null&&!settings.CameraPlacementChanged;if(settings.SceneHome!=null)sceneStatus.Text="Scene saved · confirm mounts unchanged, or run setup again.";
+  sceneUnmoved.Enabled=SceneScanPolicy.PlacementId(settings)!=null&&!settings.CameraPlacementChanged;if(settings.GuidedPlacementId!=null)sceneStatus.Text="Guided placement · scene scan incomplete. Confirm mounts unchanged before using this map.";else if(settings.SceneHome!=null)sceneStatus.Text="Scene saved · confirm mounts unchanged, or run setup again.";
   sceneUnmoved.CheckedChanged+=(_,_)=>{if(!sceneUnmoved.Checked&&!sceneScanning)Cancel();};
   inspectorBody.Controls.Add(InspectorButton("Collect room points",OpenCalibration));inspectorBody.Controls.Add(InspectorButton("Test room map · 60 sec",StartRoomTest));inspectorBody.Controls.Add(InspectorButton("Last test report",ShowTestReport));
 
@@ -202,6 +202,7 @@ internal sealed partial class ControllerForm : Form {
   if(calibrationDialog is {IsDisposed:false}){calibrationDialog.Activate();return;}
   StopTracking("Calibration preparation · movement off");
   if(SceneProblem(true) is string sceneIssue){OpenSceneSetup();SceneStatus("Scene setup comes first",sceneIssue,false);return;}
+  try{PrepareTorsoMap();}catch(Exception e){trackingStatus.Text="Calibration could not start · "+e.Message;return;}
   calibrationDialog=new CalibrationDialog(confirmed=>{nativeOff.Checked=confirmed;StartGestureCalibration();},()=>{Cancel();if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateStatus("Calibration stopped · movement off");},ResetRoomMap,StartRoomTest,FinishRoomCalibration);
   calibrationDialog.NativeOff=nativeOff.Checked;calibrationDialog.SetPoints(settings.RoomPoints);calibrationDialog.UpdatePoints(settings.RoomPoints.Length);calibrationDialog.Show(this);
   try{RoomMap.Fit(settings.RoomPoints);calibrationDialog.SetMapReady(true);}catch(IOException){}

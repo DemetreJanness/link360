@@ -4,7 +4,7 @@ using Link360;
 namespace Link360Desktop;
 
 internal sealed partial class ControllerForm {
- readonly CheckBox sceneUnmoved=new(){AutoSize=true,MaximumSize=new Size(248,0),Text="Camera mounts have not moved since the scene scan"};
+ readonly CheckBox sceneUnmoved=new(){AutoSize=true,MaximumSize=new Size(248,0),Text="Camera mounts have not moved since calibration setup"};
  readonly Label sceneStatus=new(){AutoSize=true,MaximumSize=new Size(248,0),Text="Scene setup required before collecting a new room map."};
  SceneScanDialog? sceneDialog;bool sceneScanning;string? lastSceneReport;
  string scenePhase="idle";string? sceneCancelReason;List<object>? sceneEvidence;
@@ -12,18 +12,35 @@ internal sealed partial class ControllerForm {
  void SetScenePhase(string phase){scenePhase=phase;RecordSceneEvent(new{type="phase",phase,atUtc=DateTime.UtcNow});}
  void OpenSceneSetup(){
   if(sceneDialog is {IsDisposed:false}){sceneDialog.Activate();return;}
-  sceneDialog=new(ScanRoomScene,()=>{if(sceneScanning)Cancel("Stop scan or scan window closed");},CamerasMoved,()=>{if(sceneScanning){SceneStatus("Scan in progress","Stop the scan before collecting points.",true);return;}OpenCalibration();},ShowSceneReport);
+  sceneDialog=new(ScanRoomScene,()=>{if(sceneScanning)Cancel("Stop scan or scan window closed");},CamerasMoved,()=>{if(sceneScanning){SceneStatus("Scan in progress","Stop the scan before collecting points.",true);return;}OpenCalibration();},ShowSceneReport,BeginGuidedCalibration);
   sceneDialog.Configure(nativeOff.Checked);sceneDialog.Show(this);
+  if(settings.GuidedPlacementId!=null){SceneStatus("Guided placement · empty-room scan incomplete","Collect person points to measure recovery coverage. Start a new setup whenever a mount moves.",false);return;}
   SceneStatus(settings.SceneHome==null?"Ready · room scene setup":"Scene reference saved",settings.SceneHome==null?"Start the spoken countdown, then leave both camera views.":"Confirm the mounts are unchanged, or scan again after moving either camera.",false);
  }
  void SceneStatus(string title,string detail,bool running){sceneStatus.Text=title+" · "+detail;if(sceneDialog is {IsDisposed:false})sceneDialog.Status(title,detail,running);}
  string? SceneProblem(bool collecting=false){try{RequireScene(collecting);return null;}catch(IOException e){return e.Message;}}
  void RequireScene(bool collecting=false)=>SceneScanPolicy.RequireScene(settings,sceneUnmoved.Checked,collecting);
  void CamerasMoved(){Cancel();settings.CameraPlacementChanged=true;sceneUnmoved.Checked=false;sceneUnmoved.Enabled=false;roomAlignment=null;try{PersistSettings();SceneStatus("Camera placement changed","Run scene setup again, then collect a new map. Saved points are retained.",sceneScanning);}catch(Exception e){SceneStatus("Could not save placement state",e.Message,sceneScanning);}}
+ void BeginGuidedCalibration(){
+  if(sceneScanning)return;
+  calibrationDialog?.Close();
+  Cancel("Preparing guided calibration");
+  var oldScene=settings.SceneHome;var oldGuided=settings.GuidedPlacementId;bool oldChanged=settings.CameraPlacementChanged;
+  try{
+   // This is a new placement identity, not a successful empty-room scan.
+   // PrepareSceneMap archives the old person map before new capture begins.
+   settings.SceneHome=null;settings.GuidedPlacementId=Guid.NewGuid().ToString("N");settings.CameraPlacementChanged=false;PersistSettings();
+  }catch(Exception e){settings.SceneHome=oldScene;settings.GuidedPlacementId=oldGuided;settings.CameraPlacementChanged=oldChanged;SceneStatus("Guided setup could not start",e.Message,false);return;}
+  sceneUnmoved.Enabled=true;sceneUnmoved.Checked=true;roomAlignment=null;
+  SceneStatus("Guided placement · empty-room scan incomplete","No background boundaries measured. Capture at least four spread person positions before testing recovery.",false);
+  OpenCalibration();
+ }
  void PrepareSceneMap(){
-  RequireScene(true);if(settings.RoomMapSceneId==settings.SceneHome!.Id)return;
+  RequireScene(true);var placement=SceneScanPolicy.PlacementId(settings)!;if(settings.RoomMapSceneId==placement)return;
   ArchiveRoomMap("New scene placement");
-  settings.PreviousRoomPoints=settings.RoomPoints;settings.RoomPoints=[];settings.RoomMapVersion=1;settings.RoomMapSceneId=settings.SceneHome.Id;PersistSettings();
+  var oldPoints=settings.RoomPoints;var oldPrevious=settings.PreviousRoomPoints;int oldVersion=settings.RoomMapVersion;var oldPlacement=settings.RoomMapSceneId;
+  try{settings.PreviousRoomPoints=oldPoints;settings.RoomPoints=[];settings.RoomMapVersion=1;settings.RoomMapSceneId=placement;PersistSettings();}
+  catch{settings.RoomPoints=oldPoints;settings.PreviousRoomPoints=oldPrevious;settings.RoomMapVersion=oldVersion;settings.RoomMapSceneId=oldPlacement;throw;}
  }
  void ArchiveRoomMap(string reason){
   if(settings.RoomPoints.Length==0)return;
@@ -127,7 +144,7 @@ internal sealed partial class ControllerForm {
       SceneScanPolicy.Fresh(homeRoom,DateTime.UtcNow,homeMovedAt);SceneScanPolicy.Fresh(homeLink,DateTime.UtcNow,homeMovedAt);
       var homeMatch=await Task.Run(()=>SceneRegistration.Match(homeRoom.Bytes,homeLink.Bytes,hr,hl),token);if(Math.Abs(homeMatch.X-.5)>=.065||Math.Abs(homeMatch.Y-.5)>=.065)throw new IOException("Return to centre did not align optically; scene was not saved.");
       evidence.Add(new{type="home-verification",homeMatch.X,homeMatch.Y,homeMatch.Inliers,homeMatch.InlierRatio});if(sceneDialog is {IsDisposed:false})sceneDialog.Frames(homeRoom.Bytes,homeLink.Bytes,hr,hl,homeMatch,0);
-      settings.SceneHome=new(Guid.NewGuid().ToString("N"),DateTime.UtcNow,anchors.ToArray());settings.CameraPlacementChanged=false;sceneUnmoved.Checked=true;sceneUnmoved.Enabled=true;
+      settings.SceneHome=new(Guid.NewGuid().ToString("N"),DateTime.UtcNow,anchors.ToArray());settings.GuidedPlacementId=null;settings.CameraPlacementChanged=false;sceneUnmoved.Checked=true;sceneUnmoved.Enabled=true;
       try{PersistSettings();}catch{settings.CameraPlacementChanged=true;sceneUnmoved.Checked=false;throw;}
       roomAlignment=null;success=true;
      }catch(Exception e){failure=e.Message;throw;}
