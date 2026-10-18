@@ -77,3 +77,28 @@ recovery success is claimed. Next: collect spread left/right, near/far and
 seated positions, inspect coverage, then run and review the 60-second hybrid
 test with its forced Acer takeover at 35–40 seconds. Keep the old map archives
 and primary build untouched.
+## Requested automatic retry (20:14–20:15 UTC)
+
+The user chose another empty-room scan, not the guided alternative. Guided
+calibration was not activated. Read-only native tracking query returned false.
+The leave-room countdown was set to 30 seconds. After the user started it in
+the UI, observed both direct previews and the empty shared view during the
+countdown. No movement was sent outside the existing bounded scan controller.
+
+Local report: scene-scan-20261018-201548-2b888c5a6cf94e06a947fcb5b5cb7a0e.json.
+The attempt finished normally as a failure (not cancellation), again verifying
+only the centre. It advanced farther toward upper-left, then held through four
+failed matching attempts (11, 14, 17, 15 matches, below the required 20).
+No scene reference or replacement map was saved, and no Acer recovery test
+was attempted using the stale ten-point map. Do not treat 15/20 as sufficient
+by simply lowering the threshold: feature distribution and geometric support
+also remain necessary.
+
+Rechecked primary exe/dll/profile hashes and community profile/backup hashes:
+all unchanged. Re-enabled the verified OBS Link source and restarted its
+previously active Virtual Camera after releasing the scan feeds. Runtime
+processing and diagnostic reports remained local. Current limitation is the
+automatic scan's fixed-background support near the boundary, not a successful
+new-placement calibration. Further automatic scanning needs a meaningful
+change to scene evidence or the registration method; repeating unchanged
+attempts is unlikely to resolve the observed limitation.
