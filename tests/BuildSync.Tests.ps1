@@ -24,7 +24,7 @@ G $primary @('config','user.name','LINK360 fixture') | Out-Null
 G $primary @('config','user.email','fixture@localhost') | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $primary 'scripts'),(Join-Path $primary 'src') | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo 'scripts/sync-builds.ps1') -Destination (Join-Path $primary 'scripts/sync-builds.ps1')
-'Write-Host "Fixture checks passed"; $global:LASTEXITCODE = 0' | Set-Content -LiteralPath (Join-Path $primary 'scripts/test-review-lab.ps1')
+'if ((Get-Command git).CommandType -ne "Application") { throw "Publishing helper shadows Git in child checks" }; & git --version; if ($LASTEXITCODE -ne 0) { throw "Git unavailable" }; Write-Host "Fixture checks passed"; $global:LASTEXITCODE = 0' | Set-Content -LiteralPath (Join-Path $primary 'scripts/test-review-lab.ps1')
 'baseline' | Set-Content -LiteralPath (Join-Path $primary 'src/sample.cs')
 G $primary @('add','--','scripts','src') | Out-Null
 G $primary @('commit','-m','Fixture baseline') | Out-Null
