@@ -32,6 +32,8 @@ internal sealed partial class ControllerForm : Form {
  bool trackingMoving;
  Pose? trackingOrigin;
  readonly TrackingPlanner trackingPlanner=new();
+ bool nativeSpeedUsed;Task? activeTrackingLoop;
+ readonly CheckBox nativeSpeed=new(){Text="Native speed control · experimental",AutoSize=true};
  readonly OverviewFrames overviewFrames=new();
  readonly CameraFeeds feeds=new();
  readonly SemaphoreSlim trackingFramesReady=new(0,1);
@@ -88,6 +90,7 @@ internal sealed partial class ControllerForm : Form {
   var inspectorScroll=new Panel(){Dock=DockStyle.Fill,AutoScroll=true,Margin=new Padding(0)};var inspectorBody=SuiteTheme.Stack();inspectorBody.Dock=DockStyle.None;inspectorBody.AutoSizeMode=AutoSizeMode.GrowAndShrink;inspectorBody.Padding=new Padding(0,0,0,20);inspectorBody.Location=Point.Empty;inspectorScroll.Controls.Add(inspectorBody);inspectorCard.Controls.Add(inspectorScroll,0,1);
   Button InspectorButton(string label,Action callback,bool primary=false){var button=SuiteTheme.Button(label,callback,primary);button.AutoSize=false;button.Width=248;button.Height=39;button.Margin=new Padding(0,0,0,8);return button;}
   trackingToggle=InspectorButton("Start tracking",ToggleTracking,true);inspectorHeadline.Controls.Add(trackingToggle);inspectorHeadline.Controls.Add(InspectorButton("Stop movement",Cancel));
+  nativeSpeed.MaximumSize=new Size(248,0);nativeSpeed.CheckedChanged+=(_,_)=>{nativeSpeedUsed|=nativeSpeed.Checked;StopTracking("Motor control changed · tracking stopped");};inspectorHeadline.Controls.Add(nativeSpeed);
   nativeOff.Text="Built-in camera tracking is off";nativeOff.MaximumSize=new Size(248,0);nativeOff.Margin=new Padding(0,4,0,8);inspectorHeadline.Controls.Add(nativeOff);
   void InspectorSelector(string title,ComboBox selector){inspectorBody.Controls.Add(SuiteTheme.Label(title,10,true));selector.Width=248;selector.DropDownWidth=300;selector.DropDownStyle=ComboBoxStyle.DropDownList;selector.BackColor=SuiteTheme.Raised;selector.ForeColor=SuiteTheme.Text;selector.FlatStyle=FlatStyle.Flat;selector.Margin=new Padding(0,0,0,12);inspectorBody.Controls.Add(selector);}
   InspectorSelector("Tracking mode",trackingModeSelector);InspectorSelector("Framing",framingSelector);
@@ -114,7 +117,7 @@ internal sealed partial class ControllerForm : Form {
   cameras.Controls.Add(SuiteTheme.Label("Acer FHD User Facing",17,true));cameras.Controls.Add(SuiteTheme.Label("FIXED CAMERA  /  Room overview",10,true,SuiteTheme.Accent));cameras.Controls.Add(SuiteTheme.Label("Local body detection gives the Link a wider view of the room.",10,false,SuiteTheme.Muted));cameras.Controls.Add(new Panel(){Height=20});cameras.Controls.Add(Row(SuiteTheme.Button("Restart camera previews",RestartPreviews),SuiteTheme.Button("Pause camera previews",PausePreviews)));
   cameras.Controls.Add(SuiteTheme.Label("Additional camera roles will appear here when their capture and control adapters are supported.",10,false,SuiteTheme.Muted));
   var controlsPage=Page("Controls","Manual framing and saved positions. Any movement overrides tracking.");var manual=PageStack(controlsPage);
-  manual.Controls.Add(Row(SuiteTheme.Button("Refresh camera",()=>_ = Run(async ct=>state=await engine.Execute(new(),ct))),SuiteTheme.Button("Previous framing",()=>RecallReturn()),SuiteTheme.Button("Stop movement",Cancel)));
+  manual.Controls.Add(Row(SuiteTheme.Button("Refresh camera",()=>_ = Run(async ct=>state=await ReadControlState(ct))),SuiteTheme.Button("Previous framing",()=>RecallReturn()),SuiteTheme.Button("Stop movement",Cancel)));
   manual.Controls.Add(SuiteTheme.Label("Manual movement",16,true));
   foreach(var name in new[]{"Pan","Tilt","Zoom"}){var input=new NumericUpDown(){Width=115,Minimum=-1000,Maximum=1000};values[name]=input;manual.Controls.Add(Row(new Label(){Text=name,Width=80,TextAlign=ContentAlignment.MiddleLeft},input,SuiteTheme.Button("Apply",()=>Set(name,(int)input.Value)),SuiteTheme.Button("−",()=>Nudge(name,-1)),SuiteTheme.Button("+",()=>Nudge(name,1))));}
   manual.Controls.Add(Row(SuiteTheme.Button("← Pan",()=>Nudge("Pan",-1)),SuiteTheme.Button("Pan →",()=>Nudge("Pan",1)),SuiteTheme.Button("Tilt ↑",()=>Nudge("Tilt",1)),SuiteTheme.Button("Tilt ↓",()=>Nudge("Tilt",-1))));manual.Controls.Add(Row(SuiteTheme.Button("Zoom +",()=>Nudge("Zoom",1)),SuiteTheme.Button("Zoom −",()=>Nudge("Zoom",-1))));
@@ -127,8 +130,8 @@ internal sealed partial class ControllerForm : Form {
   extra.Controls.Add(SuiteTheme.Label("Global hotkeys",16,true));extra.Controls.Add(SuiteTheme.Label("CTRL + ALT + SHIFT",9,true,SuiteTheme.Accent));extra.Controls.Add(SuiteTheme.Label("T  Tracking     1–4  Presets     Arrows  Pan / tilt     Page Up / Down  Zoom\nHome  Previous framing     End  Stop movement\nF5  Reaction     F6  Replay     F7  Acer     F8  Link",10,false,SuiteTheme.Muted));extra.Controls.Add(hotkeyStatus);extra.Controls.Add(SuiteTheme.Button("Enable / suspend hotkeys",()=>ToggleHotkeys()));
   var sharingPage=Page("Sharing","Optional OBS and Discord integration for your camera output.");var integrations=PageStack(sharingPage);integrations.Controls.Add(SuiteTheme.Label("OBS Virtual Camera",17,true));integrations.Controls.Add(SuiteTheme.Label("OBS captures your camera output. Select OBS Virtual Camera in Discord.",10,false,SuiteTheme.Muted));integrations.Controls.Add(videoStatus);integrations.Controls.Add(Row(SuiteTheme.Button("Start virtual camera",()=>VideoAction(false),true),SuiteTheme.Button("Repair capture",()=>VideoAction(true))));integrations.Controls.Add(SuiteTheme.Label("Companion actions",16,true));integrations.Controls.Add(Row(SuiteTheme.Button("Reaction",()=>Obs("reaction")),SuiteTheme.Button("Save replay",()=>Obs("clip")),SuiteTheme.Button("Acer camera",()=>Obs("cameraTwo")),SuiteTheme.Button("Return to Link",()=>Obs("return"))));
   SuiteTheme.Inputs(this);Navigate("Tracking");
-  Shown+=async(_,_)=>{await InitializeCameraInventory();if(IsDisposed)return;started=true;RegisterShortcuts();await Run(async ct=>state=await engine.Execute(new(),ct));refreshTimer.Start();_ = WatchVideo();};
-  refreshTimer.Tick+=async(_,_)=>{if(!busy&&tracking==null)await Run(async ct=>state=await engine.Execute(new(),ct),false);};
+  Shown+=async(_,_)=>{await InitializeCameraInventory();if(IsDisposed)return;started=true;RegisterShortcuts();await Run(async ct=>state=await ReadControlState(ct));refreshTimer.Start();_ = WatchVideo();};
+  refreshTimer.Tick+=async(_,_)=>{if(!busy&&tracking==null)await Run(async ct=>state=await ReadControlState(ct),false);};
   FormClosing+=(_,_)=>{started=false;Cancel();overview?.Cancel();linkPreview?.Cancel();lifetime.Cancel();calibrationAudio.Dispose();refreshTimer.Stop();foreach(var id in registered)UnregisterHotKey(Handle,id);localObs.Dispose();_ = videoRoute.DisposeAsync();_ = overviewFrames.DisposeAsync();_ = feeds.DisposeAsync();};
  }
  static FlowLayoutPanel Row(params Control[] controls) {var row=new FlowLayoutPanel(){AutoSize=true,WrapContents=false,Margin=new Padding(0,3,0,3)};row.Controls.AddRange(controls);return row;}
@@ -151,10 +154,12 @@ internal sealed partial class ControllerForm : Form {
  void StopTracking(string reason="Tracking paused") {if(roomTest!=null)testStopReason=reason;tracking?.Cancel();tracking=null;trackingToggle.Text="Start tracking";trackingPlanner.Reset();trackingStatus.Text=reason;}
  void Cancel()=>Cancel("Stop movement or tracking settings changed");
  void Cancel(string reason){if(sceneScanning){sceneCancelReason=reason;RecordSceneEvent(new{type="cancel",phase=scenePhase,atUtc=DateTime.UtcNow,reason});}++requestVersion;StopTracking();cancellation.Cancel();cancellation=new();state=null;foreach(var input in values.Values)input.Enabled=false;status.Text="Cancelled. Camera state unknown until refreshed.";}
+ Task<CameraReading> ReadControlState(CancellationToken ct)=>engine.Execute(new(ReadNativeSpeed:nativeSpeedUsed),ct);
  async Task Manual(Func<CancellationToken,Task> action) {
-  bool wasTracking=tracking!=null;StopTracking("Local AI tracking off · manual override");
+  var prior=activeTrackingLoop;bool wasTracking=tracking!=null;StopTracking("Local AI tracking off · manual override");
+  if(wasTracking&&prior!=null){try{await prior.WaitAsync(TimeSpan.FromSeconds(4));}catch(Exception e){status.Text="Manual control held · speed shutdown failed: "+e.Message;return;}}
   if(trackingMoving){Cancel("Manual camera control took over");while(busy)await Task.Delay(25);}
-  await Run(async ct=>{if(wasTracking||state==null)state=await engine.Execute(new(),ct);await action(ct);});
+  await Run(async ct=>{if(wasTracking||state==null)state=await ReadControlState(ct);await action(ct);});
  }
  void Set(string control,int value)=>_ = Manual(async ct=>{returnPose=CurrentPose();state=await engine.Execute(new(control,value),ct);});
  void Nudge(string control,int direction) {
@@ -168,7 +173,7 @@ internal sealed partial class ControllerForm : Form {
  void RecallReturn()=>_ = Manual(async ct=>{var p=returnPose??throw new Exception("No previous framing saved this session.");var previous=CurrentPose();await MoveCamera(p,ct);returnPose=previous;});
  void SavePreset(int slot,string name)=>_ = Run(async ct=>{
   if(String.IsNullOrWhiteSpace(name)||name.Length>60)throw new Exception("Preset name must be 1–60 characters.");
-  state=await engine.Execute(new(),ct);
+  state=await ReadControlState(ct);
   settings.Presets[slot]=new(name.Trim(),CurrentPose());PersistSettings();
  });
  void PersistSettings(){var temp=settingsFile+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(settings,Program.Json));File.Move(temp,settingsFile,true);}
@@ -185,7 +190,7 @@ internal sealed partial class ControllerForm : Form {
   if(lifetime.IsCancellationRequested||version!=requestVersion||tracking!=null)return;
   if(!cameraAvailable||state==null||busy){trackingStatus.Text="Refresh the camera and finish movement before enabling tracking.";return;}
    if(roomMode.Checked){try{if(!nativeOff.Checked)throw new IOException("Turn off built-in tracking with the palm gesture first, then check the box.");RoomMap.Fit(settings.RoomPoints);if(overview==null&&linkPreview==null)throw new IOException("Start camera previews first. Tracking waits for a fresh torso.");}catch(Exception e){trackingStatus.Text=e.Message;return;}}
-  trackingOrigin=CurrentPose();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";trackingPlanner.Reset();if(roomMode.Checked)_ = TrackRoom(tracking);else _ = Track(tracking);
+  trackingOrigin=CurrentPose();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";trackingPlanner.Reset();if(roomMode.Checked)activeTrackingLoop = TrackRoom(tracking);else activeTrackingLoop = Track(tracking);
   }catch(Exception e){trackingStatus.Text="Tracking could not start · "+e.Message;}finally{preparingTracking=false;trackingToggle.Enabled=true;}
  }
  async void ChangeFraming(){bool resume=tracking!=null;settings.FramingMode=framingSelector.SelectedIndex;try{PersistSettings();await Manual(async ct=>{var zoom=state!.Controls.Single(c=>c.Name=="Zoom");int desired=Math.Clamp(settings.FramingMode==1?160:100,zoom.Min,zoom.Max);desired=zoom.Min+(int)Math.Round((desired-zoom.Min)/(double)zoom.Step)*zoom.Step;var pose=CurrentPose();state=await engine.Execute(new(Target:pose with{Zoom=desired},DurationMs:750),ct);});if(resume&&state!=null&&cameraAvailable)ToggleTracking();}catch(Exception e){trackingStatus.Text="Framing stopped · "+e.Message;}}
@@ -231,7 +236,7 @@ internal sealed partial class ControllerForm : Form {
   RequireScene(true);
   if(!nativeOff.Checked)throw new IOException("Turn off built-in camera tracking before calibrating.");
   if(body==null||body.People.Length!=1||DateTime.UtcNow-bodyTime>TimeSpan.FromMilliseconds(800))throw new IOException("Calibration needs one live visible body in the Acer view.");
-  state=await engine.Execute(new(),ct);var pose=CurrentPose();var person=body.People[0];
+  state=await ReadControlState(ct);var pose=CurrentPose();var person=body.People[0];
   PrepareTorsoMap();
   if(settings.RoomPoints.Length>=25)throw new IOException("Room map holds at most twenty-five points; finish or reset the map.");
   settings.RoomPoints=[..settings.RoomPoints,new(person.CenterX/body.Width,person.CenterY/body.Height,pose.Pan,pose.Tilt)];PersistSettings();
@@ -315,7 +320,7 @@ internal sealed partial class ControllerForm : Form {
    RequireScene();var map=RoomMap.Fit(settings.RoomPoints);var observations=new List<RoomSyncObservation>();var initial=CurrentPose();
    syncStatus.Text="Sync listening · keep your torso centred and still…";
    for(int i=0;i<5;i++){await Task.Delay(120,ct);if(body==null||linkObservation==null)throw new IOException("Need one visible torso in both views.");observations.Add(new(body,bodyTime,linkObservation,linkObservationTime));}
-   state=await engine.Execute(new(),ct);if(CurrentPose()!=initial)throw new IOException("Camera moved during sync; pause and retry.");
+   state=await ReadControlState(ct);if(CurrentPose()!=initial)throw new IOException("Camera moved during sync; pause and retry.");
    roomAlignment=RoomAlignment.Sync(map,observations,state,DateTime.UtcNow);
    syncStatus.Text=$"Synced this session · pan {roomAlignment.Pan:+0;-0;0}, tilt {roomAlignment.Tilt:+0;-0;0}. Saved points unchanged.";trackingStatus.Text="Room alignment synced · Start tracking when ready";
   }catch(IOException e){syncStatus.Text="Sync not changed · "+e.Message;trackingStatus.Text=syncStatus.Text;}
@@ -323,24 +328,25 @@ internal sealed partial class ControllerForm : Form {
  async Task TrackRoom(CancellationTokenSource session,RoomMapTest? test=null) {
   string testReason="interrupted";
   try {
-   RequireScene();var map=RoomMap.Fit(settings.RoomPoints);await using var cameraSession=new LocalCameraSession(session.Token,continuous:true);
-   var planner=new HybridTrackingPlanner(map,roomAlignment);
+   RequireScene();var map=RoomMap.Fit(settings.RoomPoints);await using var cameraSession=new LocalCameraSession(session.Token,continuous:true,nativeSpeed:nativeSpeed.Checked);
+   var planner=new HybridTrackingPlanner(map,roomAlignment,nativeSpeed.Checked);
    while(!session.IsCancellationRequested) {
     if(test?.Expired==true){testReason="60-second test completed";StopTracking("Room-map test complete · last report is ready");break;}
     if(!cameraAvailable||state==null)throw new IOException("PTZ controls unavailable · "+status.Text);
     if(!busy) {
      var sample=body;var decisionRoomAt=bodyTime;var decisionLink=linkObservation;var decisionLinkAt=linkObservationTime;var decisionRoomFrame=lastRoomFrame;var decisionLinkFrame=lastLinkFrame;bool forcedAcer=test is {ElapsedMs:>=35000 and <40000};var before=CurrentPose();var decision=planner.Evaluate(sample,decisionRoomAt,forcedAcer&&decisionLink?.People.Length is not >1?null:decisionLink,decisionLinkAt,state,reversePan.Checked,reverseTilt.Checked,DateTime.UtcNow);
      var target=decision.Target;Pose? requested=target;double? commandMs=null;double? motionScale=target==null?null:decision.SpeedScale;int? relativePan=decision.RelativePan,relativeTilt=decision.RelativeTilt;string outcome=decision.Outcome;double? roomX=decision.RoomX,roomY=decision.RoomY;if(test==null)trackingStatus.Text=decision.Status;
-     if(decision.Hold)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
+     if(nativeSpeed.Checked&&decision.NativePanSpeed.HasValue){var sw=System.Diagnostics.Stopwatch.StartNew();state=await engine.Execute(new(NativePanSpeed:decision.NativePanSpeed,NativeTiltSpeed:decision.NativeTiltSpeed),session.Token,cameraSession);commandMs=sw.Elapsed.TotalMilliseconds;outcome=decision.NativePanSpeed!=0||decision.NativeTiltSpeed!=0?"move":"fine-hold";}
+     else if(decision.Hold)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
      else if((target==null||target==CurrentPose())&&state!=null&&DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()-state.SnapshotUtcMilliseconds>150)
       state=await engine.Execute(new(DurationMs:0),session.Token,cameraSession);
       if(target!=null&&target!=CurrentPose()) {
        outcome="move";var commandClock=System.Diagnostics.Stopwatch.StartNew();
        double speed=decision.SpeedScale;
-       trackingMoving=true;try{await Run(async ct=>{using var both=CancellationTokenSource.CreateLinkedTokenSource(ct,session.Token);state=await engine.Execute(new(Target:target,DurationMs:75,SpeedScale:speed,RelativePan:relativePan,RelativeTilt:relativeTilt),both.Token,cameraSession);},false);}finally{trackingMoving=false;}
+       trackingMoving=true;try{await Run(async ct=>{using var both=CancellationTokenSource.CreateLinkedTokenSource(ct,session.Token);state=await engine.Execute(new(Target:target,DurationMs:75,SpeedScale:speed,RelativePan:nativeSpeed.Checked?null:relativePan,RelativeTilt:nativeSpeed.Checked?null:relativeTilt),both.Token,cameraSession);},false);}finally{trackingMoving=false;}
        commandMs=commandClock.Elapsed.TotalMilliseconds;
       }
-     if(test!=null){var link=decisionLink;var targetPerson=link?.People.Length==1?link.People[0]:null;Pose? resolved=state?.ResolvedTargetPan is int rp&&state.ResolvedTargetTilt is int rt?new(rp,rt,CurrentPose().Zoom):null;Pose? commanded=state?.CommandedPan is int cp&&state.CommandedTilt is int ct?new(cp,ct,CurrentPose().Zoom):null;var testSample=new RoomTestSample(test.ElapsedMs,outcome,sample?.People.Length??0,sample?.People.Length==1?sample.People[0].Confidence:null,roomX,roomY,(DateTime.UtcNow-decisionRoomAt).TotalMilliseconds,sample?.InferenceMs??0,link?.People.Length??0,targetPerson==null?null:targetPerson.CenterX/link!.Width-.5,targetPerson==null?null:targetPerson.CenterY/link!.Height-.5,link==null?null:(DateTime.UtcNow-decisionLinkAt).TotalMilliseconds,before,requested,state==null?null:CurrentPose(),commandMs,motionScale,relativePan,relativeTilt,resolved,commanded,link?.AnchorKind,state?.SnapshotUtcMilliseconds is >0?DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()-state.SnapshotUtcMilliseconds:null,forcedAcer);testSample=testSample with{RecoveryAlignment=planner.RecoveryAlignment};test.Record(testSample);test.Capture(decisionRoomFrame,decisionLinkFrame,testSample);trackingStatus.Text=$"Tracking test · {test.ElapsedMs/1000}/60 sec\n{TestPhase(decision,forcedAcer)}";calibrationDialog?.UpdateStatus(trackingStatus.Text);}
+     if(test!=null){var link=decisionLink;var targetPerson=link?.People.Length==1?link.People[0]:null;Pose? resolved=state?.ResolvedTargetPan is int rp&&state.ResolvedTargetTilt is int rt?new(rp,rt,CurrentPose().Zoom):null;Pose? commanded=state?.CommandedPan is int cp&&state.CommandedTilt is int ct?new(cp,ct,CurrentPose().Zoom):null;var testSample=new RoomTestSample(test.ElapsedMs,outcome,sample?.People.Length??0,sample?.People.Length==1?sample.People[0].Confidence:null,roomX,roomY,(DateTime.UtcNow-decisionRoomAt).TotalMilliseconds,sample?.InferenceMs??0,link?.People.Length??0,targetPerson==null?null:targetPerson.CenterX/link!.Width-.5,targetPerson==null?null:targetPerson.CenterY/link!.Height-.5,link==null?null:(DateTime.UtcNow-decisionLinkAt).TotalMilliseconds,before,requested,state==null?null:CurrentPose(),commandMs,motionScale,relativePan,relativeTilt,resolved,commanded,link?.AnchorKind,state?.SnapshotUtcMilliseconds is >0?DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()-state.SnapshotUtcMilliseconds:null,forcedAcer);testSample=testSample with{RecoveryAlignment=planner.RecoveryAlignment,NativePanSpeed=state?.NativePanSpeed,NativeTiltSpeed=state?.NativeTiltSpeed};test.Record(testSample);test.Capture(decisionRoomFrame,decisionLinkFrame,testSample);trackingStatus.Text=$"Tracking test · {test.ElapsedMs/1000}/60 sec\n{TestPhase(decision,forcedAcer)}";calibrationDialog?.UpdateStatus(trackingStatus.Text);}
     }
     await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);
    }
@@ -349,14 +355,14 @@ internal sealed partial class ControllerForm : Form {
   finally{if(test!=null){try{lastTestReport=test.Finish(testReason);if(testReason=="60-second test completed")trackingStatus.Text=test.CompletionMessage;roomStatus.Text="Room-map test report saved locally · "+testReason;calibrationDialog?.UpdateStatus(roomStatus.Text);}catch(Exception e){roomStatus.Text="Test report error · "+e.Message;}try{test.Dispose();}catch{}if(ReferenceEquals(roomTest,test))roomTest=null;}session.Dispose();}
  }
  static string TestPhase(TrackingDecision decision,bool forcedAcer){
-  string phase=decision.Outcome switch{"outside-map"=>"Outside saved room area","alignment-range"=>"Framing exceeds camera range","handoff-hold"=>"Waiting for a clear subject","acquiring"=>"Finding subject","fine-hold"=>"Holding framing","fine-wait"=>"Link view guiding","fine-centering"=>"Adjusting framing",_=>"Acer view guiding"};
+  string phase=decision.Outcome switch{"outside-map"=>"Outside saved room area","alignment-range"=>"Framing exceeds camera range","handoff-hold"=>"Waiting for a clear subject","acquiring"=>"Finding subject","fine-hold"=>"Holding framing","fine-wait"=>"Link view guiding","fine-centering"=>"Adjusting framing","native-speed"=>"Following · native speed",_=>"Acer view guiding"};
   return forcedAcer?"Acer takeover · "+phase:phase;
  }
  async void StartRoomTest(){
   if(roomTest!=null){trackingStatus.Text="Test already running · Stop movement ends it";return;}
   StopTracking();int version=requestVersion;while(busy&&refreshing&&!lifetime.IsCancellationRequested)await Task.Delay(25);if(version!=requestVersion||lifetime.IsCancellationRequested)return;
   try{bool linkOnly=trackingModeSelector.SelectedIndex==1;if(trackingModeSelector.SelectedIndex==2)throw new IOException("Select a software tracking mode for this test.");if(!linkOnly){RequireScene();RoomMap.Fit(settings.RoomPoints);}if(!nativeOff.Checked)throw new IOException("Confirm built-in tracking is off using the checkbox above.");if(!cameraAvailable||state==null||busy||linkPreview==null||(!linkOnly&&(overview==null||body==null)))throw new IOException("Start previews and wait for the selected cameras to be ready. "+roomStatus.Text);
-   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment,linkOnly);testStopReason=null;trackingOrigin=CurrentPose();trackingPlanner.Reset();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";if(linkOnly)_ = Track(tracking,roomTest);else _ = TrackRoom(tracking,roomTest);
+   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment,linkOnly);testStopReason=null;trackingOrigin=CurrentPose();trackingPlanner.Reset();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";if(linkOnly)activeTrackingLoop = Track(tracking,roomTest);else activeTrackingLoop = TrackRoom(tracking,roomTest);
   }catch(Exception e){trackingStatus.Text="Test not started · "+e.Message;}
  }
  void ShowTestReport(){var directory=DiagnosticsDirectory;if(!Directory.Exists(directory))directory=Path.Combine(AppContext.BaseDirectory,"logs");var path=lastTestReport??(Directory.Exists(directory)?Directory.GetFiles(directory,"room-test-*.summary.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault():null);if(path==null){trackingStatus.Text="No room-map test report yet";return;}var report=new Form(){Text="LINK360 · Local room-map test report",Size=new Size(760,650),BackColor=SuiteTheme.Background};report.Controls.Add(new TextBox(){Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Font=new Font("Consolas",11),BackColor=SuiteTheme.Background,ForeColor=SuiteTheme.Text,Text=File.ReadAllText(path)+"\r\n\r\nSaved locally: "+path});report.Show(this);}
@@ -364,7 +370,8 @@ internal sealed partial class ControllerForm : Form {
   string testReason="interrupted";
   byte[]? lastHash=null;var lastChanged=DateTime.UtcNow;DateTime lastSharedObservation=DateTime.MinValue;bool frameHold=false;LocalBodySession? inference=null;
   try {
-   await using var cameraSession=new LocalCameraSession(session.Token,continuous:true,limitedTravel:true);
+   await using var cameraSession=new LocalCameraSession(session.Token,continuous:true,limitedTravel:true,nativeSpeed:nativeSpeed.Checked);
+   var velocityPlanner=new NativeSpeedPlanner();
    trackingStatus.Text="Local AI tracking on · manual movement turns it off";
    while(!session.IsCancellationRequested) {
     if(test?.Expired==true){testReason="60-second test completed";StopTracking("Link-only test complete");break;}
@@ -393,6 +400,11 @@ internal sealed partial class ControllerForm : Form {
      frameHold=false;
      if(state==null||busy){trackingPlanner.Reset();continue;}
      var testBefore=CurrentPose();double? testCommandMs=null;var testClock=System.Diagnostics.Stopwatch.StartNew();
+     if(nativeSpeed.Checked){
+      var demand=velocityPlanner.Plan(result,observedAt,DateTime.UtcNow,reversePan.Checked,reverseTilt.Checked);
+      if(demand!=null){state=await engine.Execute(new(NativePanSpeed:demand.Pan,NativeTiltSpeed:demand.Tilt),session.Token,cameraSession);RecordLinkTest(test,demand.Pan==0&&demand.Tilt==0?"hold":"move",result,observedAt,testBefore,commandMs:testClock.Elapsed.TotalMilliseconds);}
+      if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;
+     }
      var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,observedAt);
      if(target==null&&!trackingPlanner.WaitingForFeedback)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
      if(target!=null&&trackingOrigin!=null&&(Math.Abs(target.Pan-trackingOrigin.Pan)>20||Math.Abs(target.Tilt-trackingOrigin.Tilt)>15))throw new IOException("Tracking travel limit reached; reframe manually before enabling again.");
@@ -416,7 +428,7 @@ internal sealed partial class ControllerForm : Form {
   if(test==null)return;var person=result?.People.Length==1?result.People[0]:null;var room=body;var rp=room?.People.Length==1?room.People[0]:null;
   Pose? resolved=state?.ResolvedTargetPan is int px&&state.ResolvedTargetTilt is int py?new(px,py,before.Zoom):null;Pose? commanded=state?.CommandedPan is int cx&&state.CommandedTilt is int cy?new(cx,cy,before.Zoom):null;
   var sample=new RoomTestSample(test.ElapsedMs,outcome,room?.People.Length??0,rp?.Confidence,rp==null?null:rp.CenterX/room!.Width,rp==null?null:rp.CenterY/room!.Height,(DateTime.UtcNow-bodyTime).TotalMilliseconds,result?.InferenceMs??0,result?.People.Length??0,person==null?null:person.CenterX/result!.Width-.5,person==null?null:person.CenterY/result!.Height-.5,observedAt==null?null:(DateTime.UtcNow-observedAt.Value).TotalMilliseconds,before,target,state==null?null:CurrentPose(),commandMs,target==null?null:trackingPlanner.SpeedScale,target==null?null:target.Pan-before.Pan,target==null?null:target.Tilt-before.Tilt,resolved,commanded,result?.AnchorKind);
-  test.Record(sample);test.Capture(lastRoomFrame,lastLinkFrame,sample);trackingStatus.Text=$"Link-only test · {test.ElapsedMs/1000}/60 sec · {outcome}";
+  sample=sample with{NativePanSpeed=state?.NativePanSpeed,NativeTiltSpeed=state?.NativeTiltSpeed};test.Record(sample);test.Capture(lastRoomFrame,lastLinkFrame,sample);trackingStatus.Text=$"Link-only test · {test.ElapsedMs/1000}/60 sec · {outcome}";
  }
  async Task WatchVideo() {
   while(!lifetime.IsCancellationRequested) {

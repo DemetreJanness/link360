@@ -12,7 +12,7 @@ namespace Link360 {
  public class MotionAxis {
   public int Start,Target,Min,Max,Step;
  }
- public class TrackingMotion {public int Pan,Tilt,Zoom,DurationMs=150;public bool Hold;public double SpeedScale=1;public int? RelativePan,RelativeTilt;}
+ public class TrackingMotion {public int Pan,Tilt,Zoom,DurationMs=150;public bool Hold;public double SpeedScale=1;public int? RelativePan,RelativeTilt,NativePanSpeed,NativeTiltSpeed;}
  public static class MotionPlanner {
   public static List<MotionPoint> Plan(MotionAxis pan,MotionAxis tilt,MotionAxis zoom,int requestedMs) {
    var axes=new[]{pan,tilt,zoom};

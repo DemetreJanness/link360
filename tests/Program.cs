@@ -4,6 +4,8 @@ using Link360Desktop;
 
 if(SharedPipelineTests.TryWorker(args))return;
 if(args.Contains("--shared-pipeline-test")){await SharedPipelineTests.Run(args.Last());return;}
+if(args.Contains("--native-speed-feedback-check")){await NativeSpeedProbe.Run(args[1],args[2],true);return;}
+if(args.Contains("--native-speed-probe")){await NativeSpeedProbe.Run(args[1],args[2]);return;}
 if(args.Contains("--community-profile")){Console.WriteLine(JsonSerializer.Serialize(new {name=CommunityProfile.Title,settings=CommunityProfile.SettingsFile,diagnostics=CommunityProfile.DiagnosticsDirectory}));return;}
 if(args.Contains("--gpu-head-benchmark")){GpuHeadBenchmark.Run(args[1],args[2],!args.Contains("--cpu"));return;}
 if(args.Contains("--vision-model-info")){using var options=new Microsoft.ML.OnnxRuntime.SessionOptions();Microsoft.ML.OnnxRuntime.OrtEnv.Instance().DisableTelemetryEvents();using var session=new Microsoft.ML.OnnxRuntime.InferenceSession(Path.Combine(AppContext.BaseDirectory,"models","face_detection_yunet_2023mar.onnx"),options);Console.WriteLine(JsonSerializer.Serialize(new{inputs=session.InputMetadata.Select(x=>new{x.Key,x.Value.Dimensions,x.Value.SymbolicDimensions}),outputs=session.OutputMetadata.Select(x=>new{x.Key,x.Value.Dimensions,x.Value.SymbolicDimensions})}));return;}
@@ -28,7 +30,7 @@ SceneStartTests.Run();
 VideoMotionReview.Verify();
 HandoffAlignmentTests.Run();
 HeadFramingTests.Run();
-FeedbackControlTests.Run();
+FeedbackControlTests.Run();NativeSpeedTests.Run();
 var guidePoints=new[]{new RoomPoint(.2,.2,0,0),new RoomPoint(.8,.2,0,0),new RoomPoint(.8,.8,0,0),new RoomPoint(.2,.8,0,0)};
 var guideCopy=guidePoints.ToArray();var collectionGuide=RoomCollectionGuide.Create(guidePoints);
 Assert(collectionGuide.Next is {} gap&&Math.Abs(gap.X-.5)<.02&&Math.Abs(gap.Y-.5)<.02,"Collection guide missed the largest measured gap");

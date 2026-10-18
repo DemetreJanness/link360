@@ -24,8 +24,8 @@ internal static class SharedPipelineTests {
  static byte[] CaptureFixtureFrame(long sequence){using var image=new OpenCvSharp.Mat(180,320,OpenCvSharp.MatType.CV_8UC3,new OpenCvSharp.Scalar(sequence%2==0?40:90,70,110));return image.ToBytes(".png");}
  public static bool TryWorker(string[] args){
   string? folder=Environment.GetEnvironmentVariable(WorkerFolder);
-  if(folder==null||!args.Any(a=>a is "--continuous-camera-session" or "--body-worker" or "--worker" or "--video-worker"))return false;
-  Directory.CreateDirectory(folder);bool camera=args.Contains("--continuous-camera-session");
+  if(folder==null||!args.Any(a=>a is "--continuous-camera-session" or "--speed-camera-session" or "--body-worker" or "--worker" or "--video-worker"))return false;
+  Directory.CreateDirectory(folder);bool camera=args.Contains("--continuous-camera-session")||args.Contains("--speed-camera-session");
   bool video=args.Contains("--video-worker"),body=args.Contains("--body-worker"),allowed=File.Exists(Path.Combine(folder,"allow-fallback"));
   bool captureFixture=File.Exists(Path.Combine(folder,"capture-centred"));
   string kind=camera?"camera":allowed&&video?"video":allowed&&body?"body":captureFixture&&args.Contains("--worker")?"native":"unexpected";
@@ -42,7 +42,7 @@ internal static class SharedPipelineTests {
    if(!camera){Console.WriteLine("{\"Error\":\"Unexpected duplicate worker in shared-pipeline fixture\"}");continue;}
    File.AppendAllText(path,JsonSerializer.Serialize(new{at=DateTime.UtcNow,request})+"\n");
    if(!request.Hold&&request.Target is {} target){pan=target.Pan;tilt=target.Tilt;}
-   Console.WriteLine(JsonSerializer.Serialize(Reading(pan,tilt),Wire));
+   var reading=Reading(pan,tilt);if(args.Contains("--speed-camera-session")){reading.NativePanSpeed=request.NativePanSpeed??0;reading.NativeTiltSpeed=request.NativeTiltSpeed??0;reading.Operation="NativeSpeedTracking";}Console.WriteLine(JsonSerializer.Serialize(reading,Wire));
   }
   return true;
  }
@@ -53,10 +53,10 @@ internal static class SharedPipelineTests {
  static async Task Scenario(string root,string name,Func<ControllerForm,CancellationTokenSource,string,Task> run,Action<ControllerForm,string>? setup=null){
   string folder=Path.Combine(root,name);Directory.CreateDirectory(folder);Environment.SetEnvironmentVariable(WorkerFolder,folder);
   using var form=new ControllerForm(Path.Combine(folder,"fixture-settings.json"));using var preview=new CancellationTokenSource();using var tracking=new CancellationTokenSource();
-  Get<CameraFeeds>(form,"feeds").AllowObsFallback=false;Set(form,"cameraAvailable",true);Set(form,"state",Reading());Set(form,"trackingOrigin",new Pose(0,0,100));Set(form,"linkPreview",preview);Set(form,"tracking",tracking);
-  setup?.Invoke(form,folder);Task? loop=null;
+  Get<CameraFeeds>(form,"feeds").AllowObsFallback=false;Set(form,"cameraAvailable",true);Set(form,"state",Reading());Set(form,"trackingOrigin",new Pose(0,0,100));Set(form,"linkPreview",preview);
+  setup?.Invoke(form,folder);Set(form,"tracking",tracking);Task? loop=null;
   try{loop=(Task)typeof(ControllerForm).GetMethod("Track",Fields)!.Invoke(form,[tracking,Get<RoomMapTest?>(form,"roomTest")])!;await run(form,tracking,folder);}
-  finally{tracking.Cancel();if(loop!=null)await loop.WaitAsync(TimeSpan.FromSeconds(4));await Get<CameraFeeds>(form,"feeds").DisposeAsync();}
+  finally{try{tracking.Cancel();}catch(ObjectDisposedException){}if(loop!=null)await loop.WaitAsync(TimeSpan.FromSeconds(4));await Get<CameraFeeds>(form,"feeds").DisposeAsync();}
   Check(name+": no duplicate inference/capture worker",Directory.GetFiles(folder,"unexpected-*.jsonl").Length==0);
   Check(name+": one camera worker",Directory.GetFiles(folder,"camera-*.jsonl").Length==1);
   var pids=Directory.GetFiles(folder,"*.jsonl").Select(f=>int.Parse(Path.GetFileNameWithoutExtension(f).Split('-')[1]));
@@ -81,6 +81,11 @@ internal static class SharedPipelineTests {
       for(int i=0;i<4;i++){Publish(form,DateTime.UtcNow);await Task.Delay(80);}
       Check("fresh frames resume after stale hold",Moves(folder)>moves);
      });
+     await Scenario(root,"native-speed-route",async(form,tracking,folder)=>{
+      for(int i=0;i<7;i++){Publish(form,DateTime.UtcNow);await Task.Delay(80);}
+      var speeds=Commands(folder).Where(r=>r.NativePanSpeed.HasValue).ToArray();Check("actual Link loop routes native velocity without finite pose targets",speeds.Any(r=>r.NativePanSpeed>0)&&speeds.All(r=>r.Target==null));
+      int count=speeds.Length;await Task.Delay(180);Check("duplicate frames do not renew native velocity",Commands(folder).Count(r=>r.NativePanSpeed.HasValue)==count);
+     },(form,folder)=>Get<CheckBox>(form,"nativeSpeed").Checked=true);
      await Scenario(root,"future-frame-recovery",async(form,tracking,folder)=>{
       await Until(()=>Holds(folder)>0);
       Publish(form,DateTime.UtcNow.AddMinutes(1));await Task.Delay(180);

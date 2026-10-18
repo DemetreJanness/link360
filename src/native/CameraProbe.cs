@@ -30,6 +30,7 @@ namespace Link360 {
   public string Operation;
   public int? OriginalValue, RequestedValue, ReadbackValue;
   public bool? NativeTrackingEnabled;
+  public int? NativePanSpeed,NativeTiltSpeed,NativePanTenths,NativeTiltTenths;
   public int? CommandedPan,CommandedTilt,ResolvedTargetPan,ResolvedTargetTilt;
   public long SnapshotUtcMilliseconds;
   public int MotionCommands,MotionElapsedMs,MotionDurationMs;

@@ -18,5 +18,6 @@
     <Compile Include="../native/SmoothMotion.cs" Link="SmoothMotion.cs" />
     <Compile Include="../native/ContinuousMotion.cs" Link="ContinuousMotion.cs" />
     <Compile Include="../native/NativeTracking.cs" Link="NativeTracking.cs" />
+    <Compile Include="../native/NativeSpeedMotion.cs" Link="NativeSpeedMotion.cs" />
   </ItemGroup>
 </Project>

@@ -8,6 +8,8 @@ internal static class Program {
  internal static readonly JsonSerializerOptions Json = new() {IncludeFields=true,WriteIndented=true};
  [STAThread] static void Main(string[] args) {
   Environment.SetEnvironmentVariable("ORT_DISABLE_TELEMETRY","1");
+  if(args.Contains("--native-speed-read")){try{var readings=CameraProbe.ReadNativeSpeeds();if(readings.Count!=1||readings[0].Error!=null)throw new IOException(readings.FirstOrDefault()?.Error??"Speed read camera missing");Console.WriteLine(JsonSerializer.Serialize(readings[0],Json));}catch(Exception e){Console.WriteLine(JsonSerializer.Serialize(new{Error=e.Message}));Environment.ExitCode=1;}return;}
+  if(args.Contains("--native-speed-guardian")){try{CameraProbe.GuardNativeSpeed();}catch(Exception e){Console.WriteLine("error: "+e.Message);Environment.ExitCode=1;}return;}
   if(args.Contains("--video-worker")){VideoWorker.Run(args.Last(),args.Contains("--scene-detail"));return;}
   if(args.Contains("--body-worker")) {
    var wire=new JsonSerializerOptions(){IncludeFields=true};
@@ -21,14 +23,15 @@ internal static class Program {
    catch(Exception e){Console.WriteLine(JsonSerializer.Serialize(new FaceResult([],0,0,e.Message),wire));Environment.ExitCode=1;}
    return;
   }
-  if(args.Contains("--camera-session")||args.Contains("--continuous-camera-session")) {
+  if(args.Contains("--camera-session")||args.Contains("--continuous-camera-session")||args.Contains("--speed-camera-session")) {
    var wire=new JsonSerializerOptions(){IncludeFields=true};
-   try {Action<Func<TrackingMotion>,Action<CameraReading>> serve=args.Contains("--continuous-camera-session")?(receive,respond)=>CameraProbe.ServeContinuous(receive,respond,args.Contains("--limited-tracking")):CameraProbe.ServeTracking;serve(()=>{
+   try {Action<Func<TrackingMotion>,Action<CameraReading>> serve=args.Contains("--speed-camera-session")?(receive,respond)=>CameraProbe.ServeNativeSpeed(receive,respond,args.Contains("--limited-tracking")):args.Contains("--continuous-camera-session")?(receive,respond)=>CameraProbe.ServeContinuous(receive,respond,args.Contains("--limited-tracking")):CameraProbe.ServeTracking;serve(()=>{
     var line=Console.ReadLine();if(line==null)return null!;
     var request=JsonSerializer.Deserialize<WorkerRequest>(line,Json)??throw new IOException("Invalid tracking request.");
-    if(request.NativeTracking.HasValue||request.ReadNativeTracking||request.NativeTargetX.HasValue||request.NativeTargetY.HasValue||request.ReadRelativeCapabilities)throw new IOException("Capability/extension requests require a separate worker.");
+    if(request.NativeTracking.HasValue||request.ReadNativeTracking||request.NativeTargetX.HasValue||request.NativeTargetY.HasValue||request.ReadRelativeCapabilities||request.ReadNativeSpeed)throw new IOException("Capability/extension requests require a separate worker.");
     if(request.RelativePan.HasValue!=request.RelativeTilt.HasValue||(request.RelativePan.HasValue&&request.Target==null))throw new IOException("Relative corrections need both axes and a pose request");
     if(request.Control!=null)throw new IOException("Tracking session accepts bounded poses only.");
+    if(request.NativePanSpeed.HasValue||request.NativeTiltSpeed.HasValue){if(!args.Contains("--speed-camera-session")||!request.NativePanSpeed.HasValue||!request.NativeTiltSpeed.HasValue||request.Target!=null||request.Hold)throw new IOException("Choose a paired speed request in a speed session");NativeSpeedPacket.Encode(request.NativePanSpeed.Value,request.NativeTiltSpeed.Value);return new TrackingMotion{NativePanSpeed=request.NativePanSpeed,NativeTiltSpeed=request.NativeTiltSpeed};}
     if(request.Target==null)return new TrackingMotion{DurationMs=0,Hold=request.Hold};
     if(Process.GetProcessesByName("Insta360 Link Controller").Length>0)throw new IOException("Close Insta360 Link Controller first.");
     if(!double.IsFinite(request.SpeedScale)||request.SpeedScale<.15||request.SpeedScale>1)throw new IOException("Tracking speed outside bounds.");
@@ -42,14 +45,16 @@ internal static class Program {
    WorkerRequest? request=null;
    try {
     request=JsonSerializer.Deserialize<WorkerRequest>(Console.ReadLine()??"",Json)!;
+    if(request.NativePanSpeed.HasValue||request.NativeTiltSpeed.HasValue)throw new IOException("Speeds require the supervised speed session");
     if(request.RelativePan.HasValue||request.RelativeTilt.HasValue)throw new IOException("Relative corrections require the continuous worker");
+    if(request.ReadNativeSpeed&&(request.Target!=null||request.Control!=null||request.NativeTracking.HasValue||request.ReadNativeTracking||request.ReadRelativeCapabilities))throw new IOException("Choose one native speed read operation");
     if(request.ReadRelativeCapabilities&&(request.Target!=null||request.Control!=null||request.NativeTracking.HasValue||request.ReadNativeTracking))throw new IOException("Choose one capability query or control operation");
     if((request.ReadNativeTracking||request.NativeTracking.HasValue)&&(request.Target!=null||request.Control!=null))throw new IOException("Choose either native tracking or a PTZ request.");
     if(request.ReadNativeTracking&&request.NativeTracking.HasValue)throw new IOException("Choose native read or write.");
     if(request.Control!=null&&request.Target!=null)throw new Exception("Choose one control request type.");
     if(Process.GetProcessesByName("Insta360 Link Controller").Length>0 && (request.Control!=null||request.Target!=null)) throw new Exception("Close Insta360 Link Controller first.");
     if(request.NativeTracking.HasValue&&Process.GetProcessesByName("Insta360 Link Controller").Length>0)throw new IOException("Close Insta360 Link Controller first.");
-    var result=request.ReadRelativeCapabilities ? CameraProbe.ReadRelativeCapabilities() : request.ReadNativeTracking||request.NativeTracking.HasValue ? CameraProbe.NativeTracking(request.NativeTracking,request.NativeTargetX,request.NativeTargetY) : request.Target!=null ? CameraProbe.MoveSmooth(request.Target.Pan,request.Target.Tilt,request.Target.Zoom,request.DurationMs)
+    var result=request.ReadNativeSpeed ? CameraProbe.ReadNativeSpeeds() : request.ReadRelativeCapabilities ? CameraProbe.ReadRelativeCapabilities() : request.ReadNativeTracking||request.NativeTracking.HasValue ? CameraProbe.NativeTracking(request.NativeTracking,request.NativeTargetX,request.NativeTargetY) : request.Target!=null ? CameraProbe.MoveSmooth(request.Target.Pan,request.Target.Tilt,request.Target.Zoom,request.DurationMs)
      : request.Control==null ? CameraProbe.Read() : CameraProbe.SetControl(request.Control,request.Value);
     if(result.Count!=1) throw new Exception("Connect exactly one Insta360 Link camera.");
     if(result[0].Error!=null) throw new Exception(result[0].Error);
@@ -63,7 +68,7 @@ internal static class Program {
   Application.Run(new ControllerForm());
  }
 }
-internal record WorkerRequest(string? Control=null,int Value=0,Pose? Target=null,int DurationMs=1400,bool Hold=false,bool? NativeTracking=null,bool ReadNativeTracking=false,double? NativeTargetX=null,double? NativeTargetY=null,double SpeedScale=1,int? RelativePan=null,int? RelativeTilt=null,bool ReadRelativeCapabilities=false);
+internal record WorkerRequest(string? Control=null,int Value=0,Pose? Target=null,int DurationMs=1400,bool Hold=false,bool? NativeTracking=null,bool ReadNativeTracking=false,double? NativeTargetX=null,double? NativeTargetY=null,double SpeedScale=1,int? RelativePan=null,int? RelativeTilt=null,bool ReadRelativeCapabilities=false,int? NativePanSpeed=null,int? NativeTiltSpeed=null,bool ReadNativeSpeed=false);
 internal record Pose(int Pan,int Tilt,int Zoom);
 internal record Preset(string Name,Pose Position);
 internal sealed class CameraWorkerException(string message,string kind) : IOException(message) {
