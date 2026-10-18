@@ -83,6 +83,18 @@
     {
       "sha256": "0CCC78E3F2BDD904EDE6135BB0FADFC5B7FDEC818DA6B2F3BA620EC731867B0F",
       "name": "tracking-still.wav"
+    },
+    {
+      "name": "coverage-start.wav",
+      "sha256": "F22DADFA8BC8C4ACDD58584D71E5978C0B47F0A4E1F58837982402AF652FEC27"
+    },
+    {
+      "name": "coverage-left.wav",
+      "sha256": "F982FC5DADDF245E8DC282874D021C87008A04ABC90A3EB2AD13E30264508DEC"
+    },
+    {
+      "name": "coverage-right.wav",
+      "sha256": "4016852E15F9CB57DA15BF62D247F302827AF7A8274170DC3798A1220ED3132A"
     }
   ],
   "texts": {
@@ -105,6 +117,9 @@
     "tracking-still.wav": "Tracking test started. Please sit still for fifteen seconds.",
     "tracking-slow.wav": "Please move slowly left and right.",
     "tracking-fast.wav": "Now make a faster sideways movement.",
-    "tracking-settle.wav": "Please return to your normal seat and stay still until the test is complete."
+    "tracking-settle.wav": "Please return to your normal seat and stay still until the test is complete.",
+    "coverage-start.wav": "Fresh calibration started. Face the Link camera. Move slowly left and right, then nearer and farther. Pause for two seconds whenever you are framed. I will confirm each captured point. Your saved maps will stay unchanged.",
+    "coverage-left.wav": "Move toward the left edge of the area you calibrated, and stay there. The Acer camera will guide recovery.",
+    "coverage-right.wav": "Now move toward the right edge of your calibrated area, and stay there for Acer recovery."
   }
 }

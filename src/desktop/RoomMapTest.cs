@@ -4,7 +4,7 @@ namespace Link360Desktop;
 
 // Explicit, bounded local diagnostics session. Never accepts images, device
 // identifiers, embeddings, credentials or arbitrary application state.
-internal record RoomTestSample(long ElapsedMs,string Outcome,int RoomPeople,double? Confidence,double? RoomX,double? RoomY,double RoomAgeMs,long InferenceMs,int LinkPeople,double? LinkErrorX,double? LinkErrorY,double? LinkAgeMs,Pose Before,Pose? Requested,Pose? After,double? CommandMs,double? SpeedScale=null,int? RelativePan=null,int? RelativeTilt=null,Pose? ResolvedTarget=null,Pose? Commanded=null,string? Anchor=null,double? SnapshotAgeMs=null,bool ForcedAcer=false,RoomAlignment? RecoveryAlignment=null,int? NativePanSpeed=null,int? NativeTiltSpeed=null);
+internal record RoomTestSample(long ElapsedMs,string Outcome,int RoomPeople,double? Confidence,double? RoomX,double? RoomY,double RoomAgeMs,long InferenceMs,int LinkPeople,double? LinkErrorX,double? LinkErrorY,double? LinkAgeMs,Pose Before,Pose? Requested,Pose? After,double? CommandMs,double? SpeedScale=null,int? RelativePan=null,int? RelativeTilt=null,Pose? ResolvedTarget=null,Pose? Commanded=null,string? Anchor=null,double? SnapshotAgeMs=null,bool ForcedAcer=false,RoomAlignment? RecoveryAlignment=null,int? NativePanSpeed=null,int? NativeTiltSpeed=null,string? Guidance=null);
 internal sealed class RoomMapTest : IDisposable {
  readonly Stopwatch clock=Stopwatch.StartNew();readonly StreamWriter log;
  int samples,moves,holds,missing,outside;double squaredError;int errors;long lastSample=-200;bool finished;
@@ -12,16 +12,19 @@ internal sealed class RoomMapTest : IDisposable {
  public string LogPath {get;}
  public string? SummaryPath {get;private set;}
  readonly bool linkOnly;readonly RoomTestVideo? video;public string? VideoPath{get;}
+ public string? FreshCoverageId {get;}
+ internal static bool UseAcerAt(long elapsed,bool linkOnly,bool fresh)=>!linkOnly&&(fresh?elapsed>=23000&&elapsed<28000||elapsed>=40000&&elapsed<45000:elapsed>=35000&&elapsed<40000);
+ public bool ForceAcer=>UseAcerAt(ElapsedMs,linkOnly,FreshCoverageId!=null);
  public bool Expired=>clock.Elapsed>=TimeSpan.FromSeconds(60);
  public long ElapsedMs=>clock.ElapsedMilliseconds;
- public string CompletionMessage=>outside>0?"Test finished · some positions were outside the room map":(linkOnly?staleLink:staleRoom+staleLink)>0?"Test finished · camera freshness needs attention":"Test finished · review movement and framing";
- public RoomMapTest(string directory,RoomPoint[] points,bool recordVideo=false,RoomAlignment? alignment=null,bool linkOnly=false) {
-  this.linkOnly=linkOnly;if(!linkOnly)RoomMap.Fit(points);Directory.CreateDirectory(directory);
+ public string CompletionMessage=>outside>0?"Test finished · some positions were outside the room map":(linkOnly?staleLink:staleRoom+staleLink)>Math.Max(3,samples/20)?"Test finished · camera freshness needs attention":"Test finished · review movement and framing";
+ public RoomMapTest(string directory,RoomPoint[] points,bool recordVideo=false,RoomAlignment? alignment=null,bool linkOnly=false,string? freshCoverageId=null) {
+  FreshCoverageId=freshCoverageId;this.linkOnly=linkOnly;if(!linkOnly)RoomMap.Fit(points);Directory.CreateDirectory(directory);
   var old=Directory.GetFiles(directory,"room-test-*.jsonl").OrderByDescending(File.GetLastWriteTimeUtc).ToArray();
   foreach(var file in old.Skip(9)){File.Delete(file);var summary=Path.ChangeExtension(file,"summary.json");if(File.Exists(summary))File.Delete(summary);}
   LogPath=Path.Combine(directory,$"room-test-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}.jsonl");
   if(recordVideo){foreach(var file in Directory.GetFiles(directory,"room-test-*.avi").OrderByDescending(File.GetLastWriteTimeUtc).Skip(2))File.Delete(file);VideoPath=Path.ChangeExtension(LogPath,".avi");video=new(VideoPath);}
-  log=new StreamWriter(LogPath,false);Write(new{type="start",schema=5,mode=linkOnly?"link-only":"acer-recovery",atUtc=DateTime.UtcNow,durationSeconds=60,map=points,alignment,forcedAcerWindowMs=linkOnly?Array.Empty<int>():new[]{35000,40000},privacy="Numeric camera diagnostics only; no frames or identity data",timing="Direct frame ages start at camera Read return; OBS ages start at response receipt. Commanded/resolved poses are issued goals, not physical motor measurements."});
+  log=new StreamWriter(LogPath,false);Write(new{type="start",schema=6,freshCoverageId,mode=linkOnly?"link-only":"acer-recovery",atUtc=DateTime.UtcNow,durationSeconds=60,map=points,alignment,forcedAcerWindowMs=linkOnly?Array.Empty<int>():(freshCoverageId!=null?new[]{23000,28000,40000,45000}:new[]{35000,40000}),privacy="Numeric camera diagnostics only; no frames or identity data",timing="Direct frame ages start at camera Read return; OBS ages start at response receipt. Commanded/resolved poses are issued goals, not physical motor measurements."});
  }
  public void Capture(FeedFrame? room,FeedFrame? link,RoomTestSample sample)=>video?.Push(room,link,sample);
  void Write(object value){if(log.BaseStream.Position>2_000_000)throw new IOException("Local test log reached its size limit.");log.WriteLine(JsonSerializer.Serialize(value));log.Flush();}

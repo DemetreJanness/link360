@@ -6,6 +6,7 @@ internal sealed class CalibrationAudio : IDisposable {
  public bool Enabled=true;
  public void Saved(bool complete)=>Play("captured-tracking-point.wav",complete?"calibration-done.wav":"next-calibration-point.wav");
  public void Test()=>Play("captured-tracking-point.wav");
+ public void CoverageComplete()=>Play("captured-tracking-point.wav","calibration-done.wav","tracking-settle.wav");
  public void Complete()=>Play("calibration-done.wav");
  public void ValidateSceneAssets(){if(!Enabled)throw new IOException("Enable British voice calibration prompts in Settings before room setup.");foreach(var name in new[]{"scene-leave","scene-start","scene-complete","scene-failed","scene-cancelled","count-30","count-20","count-10","count-5","count-4","count-3","count-2","count-1"}){var path=Path.Combine(AppContext.BaseDirectory,"audio",name+".wav");if(!File.Exists(path)||new FileInfo(path).Length<44)throw new IOException("Missing local countdown voice file: "+name);}}
  public async Task Announce(string file,CancellationToken ct){

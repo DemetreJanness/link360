@@ -5,6 +5,9 @@ if(!$VoiceRoot){$VoiceRoot=Join-Path $root '.rea-tools/piper'}
 $model=Join-Path $VoiceRoot 'en_GB-cori-high.onnx'
 if((Get-FileHash -LiteralPath $model).Hash -ne '470B4DD634C98F8A4850D7626FFC3DFC90774628EEEF6605A6DD8F88F30A5903'){throw 'Voice model checksum mismatch'}
 $phrases=[ordered]@{
+  'coverage-start.wav'='Fresh calibration started. Face the Link camera. Move slowly left and right, then nearer and farther. Pause for two seconds whenever you are framed. I will confirm each captured point. Your saved maps will stay unchanged.'
+ 'coverage-left.wav'='Move toward the left edge of the area you calibrated, and stay there. The Acer camera will guide recovery.'
+ 'coverage-right.wav'='Now move toward the right edge of your calibrated area, and stay there for Acer recovery.'
  'tracking-still.wav'='Tracking test started. Please sit still for fifteen seconds.'
  'tracking-slow.wav'='Please move slowly left and right.'
  'tracking-fast.wav'='Now make a faster sideways movement.'

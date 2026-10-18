@@ -3,10 +3,11 @@ namespace Link360Desktop;
 internal record TrackingDecision(Pose? Target,bool Hold,GuidanceSource Source,string Outcome,string Status,double? RoomX=null,double? RoomY=null,double SpeedScale=.15,int? RelativePan=null,int? RelativeTilt=null,int? NativePanSpeed=null,int? NativeTiltSpeed=null);
 // Camera-independent policy. A reliable Link torso can continue without Acer;
 // Acer supplies calibrated absolute goals when the Link cannot lock a torso.
-internal sealed class HybridTrackingPlanner(RoomMap map,RoomAlignment? alignment=null,bool nativeSpeed=false) {
+internal sealed class HybridTrackingPlanner(RoomMap? map,RoomAlignment? alignment=null,bool nativeSpeed=false) {
  readonly NativeSpeedPlanner velocity=new();readonly TrackingPlanner fine=new();readonly AdaptiveAim roomAim=new();readonly HybridHandoff handoff=new();
  readonly HandoffAlignment continuity=new();int? referenceZoom;
  public RoomAlignment? RecoveryAlignment=>continuity.Reference;
+ public void ReplaceMap(RoomMap? next){map=next;continuity.Clear();}
  DateTime lastRoom=DateTime.MinValue,lastLink=DateTime.MinValue,lastRoomDemand=DateTime.MinValue;
  (double X,double Y)? previousRoom,filteredRoom;int stable;
  public TrackingDecision Evaluate(BodyResult? room,DateTime roomAt,BodyResult? link,DateTime linkAt,CameraReading state,bool reversePan,bool reverseTilt,DateTime now){
@@ -18,16 +19,18 @@ internal sealed class HybridTrackingPlanner(RoomMap map,RoomAlignment? alignment
   if(!roomValid){stable=0;previousRoom=null;filteredRoom=null;roomAim.Reset();continuity.Clear();}
   int zoom=state.Controls.Single(c=>c.Name=="Zoom").Value;if(referenceZoom!=zoom){continuity.Clear();referenceZoom=zoom;}
   int roomCount=room?.People.Length??0;if(roomCount==1&&!roomValid)roomCount=0;
-  var source=handoff.Select(roomCount,roomAge,LinkLock.GuidanceCount(link),linkAge,now);
+  var acquisition=roomValid&&linkAge is >=0 and <300&&!LinkLock.HasUsableTorso(link)?BodyReacquisition.Horizontal(link):null;
+  var source=handoff.Select(roomCount,roomAge,acquisition!=null?1:LinkLock.GuidanceCount(link),linkAge,now);
   if(roomCount>1||link?.People.Length>1)continuity.Clear();
-  if(source==GuidanceSource.Link&&roomValid&&link!=null)continuity.Observe(map,room!,roomAt,link,linkAt,state,now);else continuity.BreakAcquisition();
+  if(map!=null&&source==GuidanceSource.Link&&roomValid&&link!=null&&acquisition==null)continuity.Observe(map,room!,roomAt,link,linkAt,state,now);else continuity.BreakAcquisition();
   if(source==GuidanceSource.Hold){velocity.Reset();fine.Reset();string status=roomCount>1||link?.People.Length>1?"Multiple people · holding camera":"Waiting for a stable torso · holding camera";return new(null,true,source,"handoff-hold",status,x,y);}
   int Value(string name)=>state.Controls.Single(c=>c.Name==name).Value;
-  if(source==GuidanceSource.Link){if(linkAt==lastLink)return new(null,false,source,"fine-wait","Link subject locked · waiting for a new frame",x,y);lastLink=linkAt;if(nativeSpeed){var demand=velocity.Plan(link,linkAt,now,reversePan,reverseTilt);if(demand==null)return new(null,false,source,"fine-wait","Waiting for a fresh speed observation",x,y);return new(null,!demand.Valid,source,demand.Pan==0&&demand.Tilt==0?"fine-hold":"native-speed","Native speed tracking · "+(demand.Pan==0&&demand.Tilt==0?"holding framing":"following"),x,y,NativePanSpeed:demand.Pan,NativeTiltSpeed:demand.Tilt);}var target=fine.PlanBody(link!,state,reversePan,reverseTilt,linkAt);return new(target,target==null&&!fine.WaitingForFeedback,source,target==null?(fine.WaitingForFeedback?"feedback-wait":"fine-hold"):"fine-centering",target==null?(fine.WaitingForFeedback?"Following · waiting for image feedback":"Subject framed · steady camera"):"Link subject locked · following movement",x,y,fine.SpeedScale,target==null?null:target.Pan-Value("Pan"),target==null?null:target.Tilt-Value("Tilt"));}
+  if(source==GuidanceSource.Link){if(linkAt==lastLink)return new(null,false,source,"fine-wait","Link subject locked · waiting for a new frame",x,y);lastLink=linkAt;if(nativeSpeed){var demand=velocity.Plan(acquisition??link,linkAt,now,reversePan,reverseTilt);if(demand==null)return new(null,false,source,"fine-wait","Waiting for a fresh speed observation",x,y);if(acquisition!=null)demand=demand with{Tilt=0};return new(null,!demand.Valid,source,demand.Pan==0&&demand.Tilt==0?"fine-hold":"native-speed",acquisition!=null?"Link body visible · horizontal reacquisition":"Native speed tracking · "+(demand.Pan==0&&demand.Tilt==0?"holding framing":"following"),x,y,NativePanSpeed:demand.Pan,NativeTiltSpeed:demand.Tilt);}var target=fine.PlanBody(acquisition??link!,state,reversePan,reverseTilt,linkAt);if(acquisition!=null&&target!=null)target=target with{Tilt=Value("Tilt")};return new(target,target==null&&!fine.WaitingForFeedback,source,target==null?(fine.WaitingForFeedback?"feedback-wait":"fine-hold"):"fine-centering",target==null?(fine.WaitingForFeedback?"Following · waiting for image feedback":"Subject framed · steady camera"):"Link subject locked · following movement",x,y,fine.SpeedScale,target==null?null:target.Pan-Value("Pan"),target==null?null:target.Tilt-Value("Tilt"));}
   velocity.Reset();fine.Reset();
   if(!roomValid||stable<2||filteredRoom==null)return new(null,true,source,"acquiring","Acer acquiring torso · holding camera",x,y);
   if(roomAt==lastRoomDemand)return new(null,false,source,"room-wait","Acer guidance · waiting for a new frame",x,y);
   lastRoomDemand=roomAt;
+  if(map==null)return new(null,true,source,"uncalibrated","Fresh map not ready · keep the subject visible in Link",x,y);
   if(map.Target(x!.Value,y!.Value,state,bounded:false)==null)return new(null,true,source,"outside-map","Acer target outside mapped area · holding camera",x,y);
   var coarse=map.Target(filteredRoom.Value.X,filteredRoom.Value.Y,state,bounded:false);
   if(coarse==null)return new(null,true,source,"outside-map","Acer target outside mapped area · holding camera",x,y);

@@ -26,7 +26,7 @@ if(args.Contains("--test-video")){using var frame=new OpenCvSharp.Mat(180,320,Op
 
 static void Assert(bool condition,string text){if(!condition)throw new Exception(text);}
 SceneTests.Run();
-FreshSceneScanTests.Run();RecoveryMapExtensionTests.Run();
+FreshSceneScanTests.Run();FreshCoverageTests.Run();RecoveryMapExtensionTests.Run();
 SceneStartTests.Run();
 VideoMotionReview.Verify();
 HandoffAlignmentTests.Run();

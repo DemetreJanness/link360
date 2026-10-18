@@ -65,7 +65,7 @@ internal static class Program {
   ApplicationConfiguration.Initialize();
   using var instance=new Mutex(true,"Local\\LINK360.Desktop",out bool first);
   if(!first){MessageBox.Show("LINK360 is already running.");return;}
-  Application.Run(new ControllerForm());
+  int resume=Array.IndexOf(args,"--resume-coverage-id");Application.Run(new ControllerForm(resumeCoverageId:resume>=0&&resume+1<args.Length?args[resume+1]:null));
  }
 }
 internal record WorkerRequest(string? Control=null,int Value=0,Pose? Target=null,int DurationMs=1400,bool Hold=false,bool? NativeTracking=null,bool ReadNativeTracking=false,double? NativeTargetX=null,double? NativeTargetY=null,double SpeedScale=1,int? RelativePan=null,int? RelativeTilt=null,bool ReadRelativeCapabilities=false,int? NativePanSpeed=null,int? NativeTiltSpeed=null,bool ReadNativeSpeed=false);
