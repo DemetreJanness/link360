@@ -113,3 +113,50 @@ Further UI inputs stopped and user asked to clear an expected prompt/unlock.
 At this checkpoint vendor app remains open/network-blocked, community closed,
 and OBS camera/Virtual Camera intentionally paused pending desktop access and
 cleanup. Capture has ended. No further calibration needed for this investigation.
+
+## Successful desktop retry and native-active comparison
+
+Desktop access recovered on user retry. Native UI fine-pan centre drag produced
+no selector22 writes, so it supplies no low-speed evidence. Up/down direction
+clicks did produce four-byte selector22 SET_CUR packets, each USB success:
+
+| Action | Payload | Release-to-neutral interval |
+| --- | --- | --- |
+| Up press | 00 01 FF 04 | ~121ms |
+| Neutral | 00 01 00 01 | — |
+| Down press | 00 01 01 04 | ~112ms |
+| Neutral | 00 01 00 01 | — |
+
+The user palm-activated built-in tracking and performed slow/fast movement.
+Capture `.rea-tools/native-usb/tracking-1792360980301.pcap` completed with544
+packets;5,026 other packets dropped. The local parser validates complete packet
+boundaries and correlates setup/completion by IRP. It is retained privately as
+.rea-tools/inspect-motion-capture.mjs; numeric extraction in
+.rea-tools/native-speed-sample2.json. No images/audio saved or published.
+
+Native mode GET_CUR reported flag1 on27 observations from56.869s through82.869s
+(26seconds). During that interval there were no selector22 writes or standard
+UVC pan/tilt SET_CUR writes. The only captured SET_CUR after activation was
+entity9 selector19 (one byte) at77.859s; its meaning is not inferred here.
+This supports firmware-local native tracking rather than app-issued repeated
+pan/tilt movement. Scope: endpoint-zero UVC class traffic only; it is not a
+complete firmware execution trace or proof that no other transport exists.
+
+A follow-up capture yielded zero packets and is excluded. One USBPcap helper
+outlived its parent. Initial name/start-time guard refused cleanup because the
+comparison mixed local and UTC DateTime values. Rechecked its exact creation
+instant, corrected to UTC on both sides, then normal termination was denied by
+Windows permissions. An administrator cleanup script validated PID, exact
+executable path and creation time before termination; its result reports
+Success=true. No broad process-name kill or unrelated process termination.
+
+Native AI was turned off via its UI; a separate existing LINK360 worker then
+read NativeTrackingEnabled=false. Native app is closed. OBS source and Virtual
+Camera were restored and both reported active. Primary settings baseline hash
+still matches; community current/archived point counts remain6/10. No runtime
+motion-source change or calibration occurred during this investigation.
+
+Next implementation gate remains a bounded speed adapter/probe with independent
+neutral-stop supervision, tested low/high speeds and verified disconnect/cancel
+behavior. Do not merely replace absolute targets with unbounded speed writes.
+The selector21 native reactivation gate is unchanged.
