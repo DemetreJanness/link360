@@ -60,10 +60,10 @@ internal sealed partial class ControllerForm : Form {
  readonly Label syncStatus=new(){AutoSize=true,MaximumSize=new Size(248,0),Text="Sync is optional: centre your torso, pause, then sync. Applies this session only."};
  readonly CheckBox recordTestVideo=new(){Text="Save local test video (no audio)",AutoSize=true};
  static string DiagnosticsDirectory=>CommunityProfile.DiagnosticsDirectory;
- public ControllerForm() {
+ public ControllerForm(string? isolatedSettingsFile=null) {
   Text=CommunityProfile.Title; Width=1380; Height=920; MinimumSize=new Size(1100,760);
   BackColor=SuiteTheme.Background;ForeColor=SuiteTheme.Text;Font=new Font("Segoe UI",10);
-  Directory.CreateDirectory(CommunityProfile.DataDirectory); settingsFile=CommunityProfile.SettingsFile;
+  settingsFile=isolatedSettingsFile??CommunityProfile.SettingsFile;Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(settingsFile))!);
   try {settings=File.Exists(settingsFile)?JsonSerializer.Deserialize<Settings>(File.ReadAllText(settingsFile),Program.Json)!:new();if(settings.Presets.Length!=4)throw new Exception();}
   catch {settings=new();status.Text="Saved settings could not be read; existing file preserved.";}
   try{RoomMap.Fit(settings.RoomPoints);roomMode.Checked=true;}catch(IOException){}
@@ -302,7 +302,7 @@ internal sealed partial class ControllerForm : Form {
   if(settled<3||hashes.Count<2)throw new IOException("Centering/fresh-frame check timed out; no mapping point was saved.");
   ct.ThrowIfCancellationRequested();var sample=body;if(sample==null||sample.People.Length!=1||DateTime.UtcNow-bodyTime>TimeSpan.FromMilliseconds(800))throw new IOException("Room target lost before saving.");var p=sample.People[0];var confirmed=CurrentPose();
   var measured=new RoomPoint(p.CenterX/sample.Width,p.CenterY/sample.Height,confirmed.Pan,confirmed.Tilt);
-  if(extend){state=await engine.Execute(new(ReadNativeTracking:true),ct,camera);if(state.NativeTrackingEnabled!=false||CurrentPose()!=confirmed)throw new IOException("Camera controls changed before saving; point not added.");RequireScene(true);RecoveryMapExtension.Save(settings,measured,PersistSettings);}
+  if(extend){state=await engine.Execute(new(ReadNativeTracking:true),ct);if(state.NativeTrackingEnabled!=false||CurrentPose()!=confirmed)throw new IOException("Camera controls changed before saving; point not added.");RequireScene(true);RecoveryMapExtension.Save(settings,measured,PersistSettings);}
   else{settings.RoomPoints=[..settings.RoomPoints,measured];PersistSettings();}
   if(settings.RoomPoints.Length>=4){try{RoomMap.Fit(settings.RoomPoints);calibrationDialog?.SetMapReady(true);if(settings.RoomPoints.Length==25){roomMode.Checked=true;StopTracking("Room map ready · Test room map is available");}}catch(IOException e){mapFitIssue=e.Message;calibrationDialog?.SetMapReady(false);}}
  }

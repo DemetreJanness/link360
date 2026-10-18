@@ -6,6 +6,8 @@ $labRoot = Split-Path -Parent $PSScriptRoot
 $previousTelemetry = $env:DOTNET_CLI_TELEMETRY_OPTOUT
 $previousFirstRun = $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE
 $previousNoLogo = $env:DOTNET_NOLOGO
+$liveCommunitySettings = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'LINK360-Community/settings.local.json'
+$liveCommunityHashBefore = if (Test-Path -LiteralPath $liveCommunitySettings) { (Get-FileHash -LiteralPath $liveCommunitySettings).Hash } else { $null }
 Push-Location -LiteralPath $labRoot
 try {
     $gitDir = & git rev-parse --absolute-git-dir
@@ -50,4 +52,6 @@ finally {
     $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = $previousFirstRun
     $env:DOTNET_NOLOGO = $previousNoLogo
     Pop-Location
+    $liveCommunityHashAfter = if (Test-Path -LiteralPath $liveCommunitySettings) { (Get-FileHash -LiteralPath $liveCommunitySettings).Hash } else { $null }
+    if ($liveCommunityHashBefore -ne $liveCommunityHashAfter) { throw 'Live community settings changed during tests. Test fixtures must use isolated settings files.' }
 }

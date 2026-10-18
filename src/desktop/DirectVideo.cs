@@ -58,7 +58,7 @@ namespace Link360Desktop {
   public DirectFrames(string role,bool sceneDetail=false,string? executable=null){this.role=role;this.sceneDetail=sceneDetail;this.executable=executable??Environment.ProcessPath!;}
   void Kill(){try{if(process is {HasExited:false})process.Kill(true);}catch{} }
   public async Task<FeedFrame> Read(CancellationToken ct) {
-   await gate.WaitAsync(ct);using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(7000);using var cancellation=deadline.Token.Register(Kill);
+   await gate.WaitAsync(ct);using var deadline=CancellationTokenSource.CreateLinkedTokenSource(ct);deadline.CancelAfter(lastSequence==0?20000:7000);using var cancellation=deadline.Token.Register(Kill);
    try {
     if(process==null){var matches=CameraProbe.VideoDevices().Where(d=>d.Name==(role=="room"?"Acer FHD User Facing":"Insta360 Link")).ToArray();if(matches.Length!=1)throw new IOException("Expected one camera for direct preview.");if(identity!=null&&identity!=matches[0].Path)throw new IOException("Camera changed; reopen preview and recalibrate.");identity=matches[0].Path;
      var start=new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true};start.ArgumentList.Add("--video-worker");if(sceneDetail)start.ArgumentList.Add("--scene-detail");start.ArgumentList.Add(role);process=Process.Start(start)??throw new IOException("Cannot start local capture worker.");lastSequence=0;changed=DateTime.UtcNow;}

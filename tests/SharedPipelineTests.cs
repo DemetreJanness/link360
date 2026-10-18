@@ -21,19 +21,25 @@ internal static class SharedPipelineTests {
  static void Publish(ControllerForm form,DateTime at){Set(form,"linkObservation",Body());Set(form,"lastLinkFrame",new FeedFrame([1],at,DateTime.UtcNow));Set(form,"linkObservationTime",at);typeof(ControllerForm).GetMethod("SignalTrackingFrame",Fields)!.Invoke(form,null);}
  static void Check(string name,bool pass,string detail=""){results.Add(new{name,pass,detail});if(!pass)failures++;Console.WriteLine($"{(pass?"PASS":"FAIL")}: {name} {detail}");}
 
+ static byte[] CaptureFixtureFrame(long sequence){using var image=new OpenCvSharp.Mat(180,320,OpenCvSharp.MatType.CV_8UC3,new OpenCvSharp.Scalar(sequence%2==0?40:90,70,110));return image.ToBytes(".png");}
  public static bool TryWorker(string[] args){
   string? folder=Environment.GetEnvironmentVariable(WorkerFolder);
   if(folder==null||!args.Any(a=>a is "--continuous-camera-session" or "--body-worker" or "--worker" or "--video-worker"))return false;
   Directory.CreateDirectory(folder);bool camera=args.Contains("--continuous-camera-session");
   bool video=args.Contains("--video-worker"),body=args.Contains("--body-worker"),allowed=File.Exists(Path.Combine(folder,"allow-fallback"));
-  string kind=camera?"camera":allowed&&video?"video":allowed&&body?"body":"unexpected";
+  bool captureFixture=File.Exists(Path.Combine(folder,"capture-centred"));
+  string kind=camera?"camera":allowed&&video?"video":allowed&&body?"body":captureFixture&&args.Contains("--worker")?"native":"unexpected";
   string path=Path.Combine(folder,$"{kind}-{Environment.ProcessId}.jsonl");File.WriteAllText(path,JsonSerializer.Serialize(new{started=true,args})+"\n");
   int pan=0,tilt=0;long sequence=0;string? line;
   while((line=Console.ReadLine())!=null){
-   if(allowed&&video){Thread.Sleep(60);Console.WriteLine(JsonSerializer.Serialize(new VideoPacket(Convert.ToBase64String([1]),++sequence,ReadAtUtcMilliseconds:DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));continue;}
-   if(allowed&&body){Console.WriteLine(JsonSerializer.Serialize(Body(),Wire));continue;}
-   if(!camera){Console.WriteLine("{\"Error\":\"Unexpected duplicate worker in shared-pipeline fixture\"}");continue;}
+   if(allowed&&video){if(sequence==0&&File.Exists(Path.Combine(folder,"slow-video-start")))Thread.Sleep(8000);Thread.Sleep(60);Console.WriteLine(JsonSerializer.Serialize(new VideoPacket(Convert.ToBase64String(captureFixture?CaptureFixtureFrame(sequence):[1]),++sequence,ReadAtUtcMilliseconds:DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())));continue;}
+   if(allowed&&body){Console.WriteLine(JsonSerializer.Serialize(captureFixture?Body() with{People=[new(80,10,160,160,160,90,.95)]}:Body(),Wire));continue;}
    var request=JsonSerializer.Deserialize<WorkerRequest>(line,Wire)!;
+   if(captureFixture&&request.ReadNativeTracking){
+    if(camera)Console.WriteLine("{\"Error\":\"Capability/extension requests require a separate worker.\"}");
+    else{var native=Reading();native.NativeTrackingEnabled=false;Console.WriteLine(JsonSerializer.Serialize(native,Wire));}continue;
+   }
+   if(!camera){Console.WriteLine("{\"Error\":\"Unexpected duplicate worker in shared-pipeline fixture\"}");continue;}
    File.AppendAllText(path,JsonSerializer.Serialize(new{at=DateTime.UtcNow,request})+"\n");
    if(!request.Hold&&request.Target is {} target){pan=target.Pan;tilt=target.Tilt;}
    Console.WriteLine(JsonSerializer.Serialize(Reading(pan,tilt),Wire));
@@ -46,7 +52,7 @@ internal static class SharedPipelineTests {
  static async Task Until(Func<bool> condition,int timeout=2000){var clock=Stopwatch.StartNew();while(!condition()&&clock.ElapsedMilliseconds<timeout)await Task.Delay(25);}
  static async Task Scenario(string root,string name,Func<ControllerForm,CancellationTokenSource,string,Task> run,Action<ControllerForm,string>? setup=null){
   string folder=Path.Combine(root,name);Directory.CreateDirectory(folder);Environment.SetEnvironmentVariable(WorkerFolder,folder);
-  using var form=new ControllerForm();using var preview=new CancellationTokenSource();using var tracking=new CancellationTokenSource();
+  using var form=new ControllerForm(Path.Combine(folder,"fixture-settings.json"));using var preview=new CancellationTokenSource();using var tracking=new CancellationTokenSource();
   Get<CameraFeeds>(form,"feeds").AllowObsFallback=false;Set(form,"cameraAvailable",true);Set(form,"state",Reading());Set(form,"trackingOrigin",new Pose(0,0,100));Set(form,"linkPreview",preview);Set(form,"tracking",tracking);
   setup?.Invoke(form,folder);Task? loop=null;
   try{loop=(Task)typeof(ControllerForm).GetMethod("Track",Fields)!.Invoke(form,[tracking,Get<RoomMapTest?>(form,"roomTest")])!;await run(form,tracking,folder);}
@@ -114,12 +120,40 @@ internal static class SharedPipelineTests {
       typeof(DirectFrames).GetField("process",Fields)!.SetValue(direct,video);
       typeof(DirectFrames).GetField("changed",Fields)!.SetValue(direct,DateTime.UtcNow);
      });
+     string slowFolder=Path.Combine(root,"slow-capture-start");Directory.CreateDirectory(slowFolder);Environment.SetEnvironmentVariable(WorkerFolder,slowFolder);
+     File.WriteAllText(Path.Combine(slowFolder,"allow-fallback"),"synthetic frames only");File.WriteAllText(Path.Combine(slowFolder,"slow-video-start"),"delay first frame beyond former seven-second limit");
+     var slowVideo=Process.Start(new ProcessStartInfo(Environment.ProcessPath!,"--video-worker link"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true})!;
+     int slowPid=slowVideo.Id;await using(var slow=new DirectFrames("link")){
+      typeof(DirectFrames).GetField("process",Fields)!.SetValue(slow,slowVideo);typeof(DirectFrames).GetField("changed",Fields)!.SetValue(slow,DateTime.UtcNow);
+      using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(15));var startup=Stopwatch.StartNew();var first=await slow.Read(timeout.Token);
+      Check("slow initial capture survives beyond seven seconds",startup.ElapsedMilliseconds>=8000&&first.Bytes.Length==1&&first.ReadAtUtc!=null);
+      startup.Restart();var second=await slow.Read(timeout.Token);Check("opened capture keeps normal fast frame delivery",startup.ElapsedMilliseconds<2000&&second.ReadAtUtc>=first.ReadAtUtc);
+      using var cancelled=new CancellationTokenSource();cancelled.Cancel();bool rejected=false;try{await slow.Read(cancelled.Token);}catch(OperationCanceledException){rejected=true;}Check("slow-start capture still honours cancellation",rejected);
+     }
+     bool slowExited;try{using var remaining=Process.GetProcessById(slowPid);slowExited=remaining.HasExited;}catch(ArgumentException){slowExited=true;}Check("slow capture worker released",slowExited);
+     string captureFolder=Path.Combine(root,"one-point-capture");Directory.CreateDirectory(captureFolder);Environment.SetEnvironmentVariable(WorkerFolder,captureFolder);
+     File.WriteAllText(Path.Combine(captureFolder,"allow-fallback"),"synthetic frames only");File.WriteAllText(Path.Combine(captureFolder,"capture-centred"),"known centred head observations");
+     using(var form=new ControllerForm(Path.Combine(captureFolder,"fixture-settings.json"))){
+      var saved=Get<Settings>(form,"settings");RoomPoint[] original=[new(.4,.5,-3,5),new(.7,.5,14,5),new(.7,.8,14,-10),new(.4,.8,-3,-10)];
+      var oldTen=Enumerable.Range(0,10).Select(i=>new RoomPoint(.1+i*.03,.3,i,i)).ToArray();
+      saved.RoomPoints=original;saved.PreviousRoomPoints=oldTen;saved.RoomMapVersion=2;saved.RoomMapSceneId="capture-fixture";saved.SceneHome=new("capture-fixture",DateTime.UtcNow,SceneScanPolicy.Targets.Select(t=>new SceneAnchor(t.X,t.Y,0,0,100,40,.9)).ToArray());saved.GuidedPlacementId=null;saved.PendingSceneScanId=null;saved.CameraPlacementChanged=false;
+      Get<CheckBox>(form,"sceneUnmoved").Checked=true;Set(form,"state",Reading());Set(form,"cameraAvailable",true);
+      Set(form,"body",new BodyResult([new(20,40,220,270,192,216,.95)],640,360,"synthetic",0));Set(form,"bodyTime",DateTime.UtcNow);using var freshBody=new System.Windows.Forms.Timer{Interval=50};freshBody.Tick+=(_,_)=>Set(form,"bodyTime",DateTime.UtcNow);freshBody.Start();
+      var video=Process.Start(new ProcessStartInfo(Environment.ProcessPath!,"--video-worker link"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true})!;
+      var feeds=Get<CameraFeeds>(form,"feeds");var direct=typeof(CameraFeeds).GetField("link",Fields)!.GetValue(feeds)!;typeof(DirectFrames).GetField("process",Fields)!.SetValue(direct,video);typeof(DirectFrames).GetField("changed",Fields)!.SetValue(direct,DateTime.UtcNow);
+      using var limit=new CancellationTokenSource(TimeSpan.FromSeconds(8));await using var detector=new LocalBodySession(limit.Token,wholeBody:true,torso:true);await using var cameraSession=new LocalCameraSession(limit.Token);
+      try{await (Task)typeof(ControllerForm).GetMethod("CentreAndRecord",Fields)!.Invoke(form,[detector,cameraSession,limit.Token,true])!;
+       Check("actual point capture saves measured pair",saved.RoomPoints.Length==5&&saved.RoomPoints.Take(4).SequenceEqual(original)&&Math.Abs(saved.RoomPoints[4].X-.3)<1e-6);
+       Check("actual point capture preserves original ten",saved.PreviousRoomPoints.SequenceEqual(oldTen));
+       Check("native verification uses separate worker",Directory.GetFiles(captureFolder,"native-*.jsonl").Length==1&&Directory.GetFiles(captureFolder,"unexpected-*.jsonl").Length==0);
+      }finally{await feeds.StopCapture();}
+     }
      completion.SetResult();
     }catch(Exception e){completion.SetException(e);}finally{Application.ExitThread();}
    }));
    Application.Run();
   }){IsBackground=true};thread.SetApartmentState(ApartmentState.STA);thread.Start();
-  try{await completion.Task.WaitAsync(TimeSpan.FromSeconds(30));}
+  try{await completion.Task.WaitAsync(TimeSpan.FromSeconds(45));}
   finally{Environment.SetEnvironmentVariable(WorkerFolder,previous);File.WriteAllText(Path.Combine(root,"results.json"),JsonSerializer.Serialize(new{failures,tests=results},new JsonSerializerOptions(){WriteIndented=true}));}
   if(failures>0)Environment.ExitCode=1;
  }

@@ -52,3 +52,65 @@ both previews recovered on restart. The Link image appeared tilted/upward.
 Physical coverage capture is waiting on the user's mount-placement/readiness
 reply; no new point or physical recovery result is claimed yet. The four current
 points and ten preserved previous points remain in the community profile.
+
+## Live capture fixes and test-isolation incident
+
+After mount placement was confirmed unchanged, live capture reached centering
+but the new final native-state query incorrectly used a continuous camera
+session. That session intentionally rejects extension requests. The query now
+uses a separate worker. A new integration fixture exercises the actual
+CentreAndRecord method with synthetic image, body and camera workers, including
+that separate-worker boundary, real persistence and prior-pair preservation.
+
+The first successful fixture run exposed a test-isolation error: a hidden form
+used the default real community settings path. Synthetic calibration fields were
+written to the community profile. No physical point was accepted from that
+profile. The app was closed and the four real pairs restored from two agreeing
+records: the successful local scene report and its pre-extension map archive.
+The previous ten-point field was restored from its unchanged original archive.
+Primary settings and original archive hashes still matched baseline. The
+incident profile was preserved locally for diagnosis; it is not committed.
+
+ControllerForm now accepts an explicit isolated settings path, and every hidden
+form fixture supplies its own fixture-directory path. The corrected test run
+passed; the restored real profile's hash was unchanged before/after that run.
+The review runner additionally rejects any live community profile hash change.
+
+Link startup also repeatedly lost its first capture while parked. DirectFrames
+now allows 20 seconds until the first delivered frame, retaining the existing
+seven-second read deadline thereafter. An eight-second synthetic startup test
+passes, normal subsequent delivery remains fast, and cancellation releases the
+worker. This change affects startup allowance, not tracking smoothing or its
+freshness guards.
+
+A subsequent real capture saved one additional subject-centred pair. The map
+contains five real points and preserves the original four and prior ten-point
+field. This first pair falls inside existing coverage; an outer TV-side capture
+and another physical recovery test are still in progress. No expanded-coverage
+or recovery-success claim is made from the interior point alone.
+
+## Six-point physical coverage check
+
+A standing TV-side capture saved the sixth real pair at Acer (0.065354,
+0.517664), Link pan -32, tilt 10. This extends the measured hull; point five
+was an interior refinement. All original four pairs and PreviousRoomPoints
+remain preserved. The user confirmed unchanged mounts.
+
+The 60-second local numeric test `room-test-20261018-213144-2583083b`
+completed with both feeds fresh: 539 samples, no missing/ambiguous room target,
+no stale room or Link samples. The forced Acer interval produced 49 movement
+requests across 61 samples, with seven outside-map holds and five room waits.
+This exercises actual Acer correction, unlike the previous all-outside-map
+forced interval. The user judged the handoff/settling “Smooth enough.”
+
+There were 28 outside-map samples overall, so coverage remains incomplete.
+The first 15 seconds included initial reacquisition from the outer capture
+pose; the last ten seconds still showed a large observed target span and 75
+movement requests. This run does not establish zero stationary hunting, nor
+complete room coverage. No video was recorded for this run.
+
+The guarded review runner passed after closing the community app:
+`artifacts/review-lab/20261018-143336-1e725c39`. Build: zero warnings/errors;
+default fixtures and shared-loop integrations passed; live community profile
+hash remained unchanged throughout the run. The direct-startup and native-query
+fixes are included, with tracking smoothing sources unchanged.
