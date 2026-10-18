@@ -31,3 +31,10 @@ branches are updated together without merging unseen main contributions.
 Validation and deployment results are appended after completion.
 
 Community guarded checks 20261018-162252-29e5952a passed, zero warnings/errors. Final explicit Community build and profile probe passed after profile validation was added.
+
+Local offline restore, Release build and default regression fixtures passed with
+zero warnings/errors. Local/Community profile probes selected their expected
+labels and distinct data locations. Private settings and archived map hashes
+matched the pre-update snapshots. The two dedicated vape OBS inputs and leftover
+community output voice asset were removed; Link input and Virtual Camera remained
+active. Native tracking/control constants were not retuned during alignment.
