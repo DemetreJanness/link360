@@ -81,7 +81,7 @@ internal sealed partial class ControllerForm : Form {
   var trackingPage=Page("Tracking","LINK STUDIO  /  Your live camera workspace");
   var trackingLayout=new TableLayoutPanel(){Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Padding=new Padding(0,90,0,0),MinimumSize=new Size(0,520)};trackingLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));trackingLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,300));trackingPage.Controls.Add(trackingLayout);trackingLayout.SendToBack();
   var stageGrid=new TableLayoutPanel(){Dock=DockStyle.Fill,ColumnCount=1,RowCount=3};stageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute,34));stageGrid.RowStyles.Add(new RowStyle(SizeType.Percent,100));stageGrid.RowStyles.Add(new RowStyle(SizeType.Absolute,100));stageGrid.Controls.Add(SuiteTheme.Label("INSTA360 LINK  /  LIVE FRAMING",10,true,SuiteTheme.Muted),0,0);mainLinkPreview.Dock=DockStyle.Fill;stageGrid.Controls.Add(mainLinkPreview,0,1);
-  var stageActions=Row(SuiteTheme.Button("Start / retry previews",RestartPreviews),SuiteTheme.Button("Pause previews",PausePreviews),SuiteTheme.Button("Room scene setup",OpenSceneSetup),SuiteTheme.Button("Test tracking · 60 sec",StartRoomTest),recordTestVideo);stageActions.WrapContents=true;stageActions.AutoSize=false;stageActions.Dock=DockStyle.Fill;stageActions.Margin=new Padding(0,10,0,0);stageGrid.Controls.Add(stageActions,0,2);trackingLayout.Controls.Add(SuiteTheme.Card(stageGrid,14),0,0);
+  var stageActions=Row(SuiteTheme.Button("Start / retry previews",RestartPreviews),SuiteTheme.Button("Pause previews",PausePreviews),SuiteTheme.Button("Room scene setup",OpenSceneSetup),SuiteTheme.Button("Test tracking · 60 sec",StartRoomTest),SuiteTheme.Button("Add recovery point",StartCoverageCapture),recordTestVideo);stageActions.WrapContents=true;stageActions.AutoSize=false;stageActions.Dock=DockStyle.Fill;stageActions.Margin=new Padding(0,10,0,0);stageGrid.Controls.Add(stageActions,0,2);trackingLayout.Controls.Add(SuiteTheme.Card(stageGrid,14),0,0);
   var inspector=new TableLayoutPanel(){Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=new Padding(0)};inspector.RowStyles.Add(new RowStyle(SizeType.Percent,100));inspector.RowStyles.Add(new RowStyle(SizeType.Absolute,225));trackingLayout.Controls.Add(inspector,1,0);
   var inspectorCard=new TableLayoutPanel(){Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,Margin=new Padding(0)};inspectorCard.RowStyles.Add(new RowStyle(SizeType.AutoSize));inspectorCard.RowStyles.Add(new RowStyle(SizeType.Percent,100));
   var inspectorHeadline=SuiteTheme.Stack();inspectorHeadline.Controls.Add(SuiteTheme.Label("TRACKING",9,true,SuiteTheme.Accent));trackingStatus.Font=new Font("Segoe UI",11,FontStyle.Bold);trackingStatus.AutoSize=false;trackingStatus.Size=new Size(248,84);trackingStatus.MaximumSize=new Size(248,84);trackingStatus.AutoEllipsis=true;trackingStatus.Margin=new Padding(0,0,0,12);inspectorHeadline.Controls.Add(trackingStatus);inspectorCard.Controls.Add(inspectorHeadline,0,0);
@@ -237,16 +237,21 @@ internal sealed partial class ControllerForm : Form {
   settings.RoomPoints=[..settings.RoomPoints,new(person.CenterX/body.Width,person.CenterY/body.Height,pose.Pan,pose.Tilt)];PersistSettings();
   try{RoomMap.Fit(settings.RoomPoints);roomStatus.Text=$"Room map ready with {settings.RoomPoints.Length} points · test slow movement first";}catch(Exception e){roomStatus.Text=$"Saved {settings.RoomPoints.Length} points · "+e.Message;}
  });
- async void StartGestureCalibration() {
+ void StartGestureCalibration()=>StartPointCapture(false);
+ void StartCoverageCapture()=>StartPointCapture(true);
+ async void StartPointCapture(bool extend) {
   StopTracking();int version=requestVersion;while(busy&&refreshing&&!lifetime.IsCancellationRequested)await Task.Delay(25);
   if(lifetime.IsCancellationRequested||version!=requestVersion)return;
   string? blocked=SceneProblem(true)??(!nativeOff.Checked?"Confirm the camera's built-in tracking is off in this dialog.":overview==null?"Start camera previews first.":body==null?"Room camera needs fresh frames; restart previews.":state==null?"Link controls unavailable; refresh the camera.":busy?"A camera movement is in progress; wait or cancel.":null);
   if(blocked!=null){CalibrationStatus("Blocked · "+blocked);return;}
-  PrepareTorsoMap();calibrationDialog?.UpdatePoints(settings.RoomPoints.Length);
+  if(extend){
+   try{RoomMap.Fit(settings.RoomPoints);await Run(async ct=>state=await engine.Execute(new(ReadNativeTracking:true),ct),false);if(state?.NativeTrackingEnabled!=false)throw new IOException("Built-in tracking must be confirmed off.");ArchiveRoomMap("Before same-placement coverage extension");}
+   catch(Exception e){CalibrationStatus("Blocked · "+e.Message);return;}
+  }else PrepareTorsoMap();calibrationDialog?.UpdatePoints(settings.RoomPoints.Length);
   CalibrationStatus("Calibration listening · stand still for two seconds; no arm pose needed");
-  tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);_ = GestureCalibration(tracking);
+  tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";_ = GestureCalibration(tracking,extend);
  }
- async Task GestureCalibration(CancellationTokenSource session) {
+ async Task GestureCalibration(CancellationTokenSource session,bool extend=false) {
   try {
    await using var linkBody=new LocalBodySession(session.Token,wholeBody:true,torso:true);await using var camera=new LocalCameraSession(session.Token);
    var stillness=new StillnessCapture();int seen=-1;
@@ -256,13 +261,13 @@ internal sealed partial class ControllerForm : Form {
      seen=bodyVersion;var sample=body;
      bool valid=sample!=null&&sample.People.Length==1&&DateTime.UtcNow-bodyTime<TimeSpan.FromMilliseconds(600);
      var person=valid?sample!.People[0]:null;double x=person==null?0:person.CenterX/sample!.Width,y=person==null?0:person.CenterY/sample!.Height;
-     bool nearby=valid&&settings.RoomPoints.Any(p=>Math.Sqrt(Math.Pow(p.X-x,2)+Math.Pow(p.Y-y,2))<0.07);
+     bool nearby=valid&&settings.RoomPoints.Any(p=>Math.Sqrt(Math.Pow(p.X-x,2)+Math.Pow(p.Y-y,2))<(extend?.04:.07));
      if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateStatus(!valid?"Calibration listening · need one fresh torso in the room view":nearby||stillness.WaitingForMove?"Move to a new room position · current area already captured":"Listening · stand still for two seconds; no arm pose needed");
      bool capture=stillness.Tick(valid&&!nearby,x,y,DateTime.UtcNow);calibrationDialog?.UpdateHold(stillness.Progress(DateTime.UtcNow));
      if(capture) {
-      if(settings.RoomPoints.Any(p=>Math.Sqrt(Math.Pow(p.X-x,2)+Math.Pow(p.Y-y,2))<0.07)){CalibrationStatus("Point not saved · Already mapped nearby; lower arms and move farther");System.Media.SystemSounds.Exclamation.Play();}
+      if(settings.RoomPoints.Any(p=>Math.Sqrt(Math.Pow(p.X-x,2)+Math.Pow(p.Y-y,2))<(extend?.04:.07))){CalibrationStatus("Point not saved · Already mapped nearby; lower arms and move farther");System.Media.SystemSounds.Exclamation.Play();}
       else {
-       try{mapFitIssue=null;await CentreAndRecord(linkBody,camera,session.Token);calibrationAudio.Saved(tracking==null);CalibrationStatus(tracking==null?"Room map ready · Ctrl + Alt + Shift + T starts body tracking":$"Saved room point {settings.RoomPoints.Length} · move to the next position");if(mapFitIssue!=null)calibrationDialog?.UpdateFailure("Point saved; map needs another position · "+mapFitIssue);}
+       try{mapFitIssue=null;await CentreAndRecord(linkBody,camera,session.Token,extend);if(extend)StopTracking($"Recovery point saved · {settings.RoomPoints.Length} points · movement off");calibrationAudio.Saved(tracking==null);CalibrationStatus(extend?$"Recovery point saved · {settings.RoomPoints.Length} points · ready for the next position":tracking==null?"Room map ready · Ctrl + Alt + Shift + T starts body tracking":$"Saved room point {settings.RoomPoints.Length} · move to the next position");if(mapFitIssue!=null)calibrationDialog?.UpdateFailure("Point saved; map needs another position · "+mapFitIssue);}
        catch(OperationCanceledException){throw;}
        catch(Exception e){var issue="Point not saved · "+e.Message+" · Retry this position when ready.";StopTracking(issue);CalibrationStatus(issue);System.Media.SystemSounds.Exclamation.Play();}
        await Task.Delay(1500,session.Token);
@@ -275,7 +280,7 @@ internal sealed partial class ControllerForm : Form {
   catch(Exception e){if(ReferenceEquals(tracking,session)){StopTracking("Calibration stopped · "+e.Message);CalibrationStatus(trackingStatus.Text);}}
   finally{session.Dispose();}
  }
- async Task CentreAndRecord(LocalBodySession linkBody,LocalCameraSession camera,CancellationToken ct) {
+ async Task CentreAndRecord(LocalBodySession linkBody,LocalCameraSession camera,CancellationToken ct,bool extend=false) {
   if(settings.RoomPoints.Length>=25)throw new IOException("Room map has twenty-five points; finish calibration or reset the map.");
   var anchor=CurrentPose();var policy=new CenteringPolicy(anchor);var origin=body!.People[0];var clock=System.Diagnostics.Stopwatch.StartNew();int settled=0;var hashes=new HashSet<string>();
   while(clock.Elapsed<TimeSpan.FromSeconds(30)) {
@@ -296,7 +301,9 @@ internal sealed partial class ControllerForm : Form {
   }
   if(settled<3||hashes.Count<2)throw new IOException("Centering/fresh-frame check timed out; no mapping point was saved.");
   ct.ThrowIfCancellationRequested();var sample=body;if(sample==null||sample.People.Length!=1||DateTime.UtcNow-bodyTime>TimeSpan.FromMilliseconds(800))throw new IOException("Room target lost before saving.");var p=sample.People[0];var confirmed=CurrentPose();
-  settings.RoomPoints=[..settings.RoomPoints,new(p.CenterX/sample.Width,p.CenterY/sample.Height,confirmed.Pan,confirmed.Tilt)];PersistSettings();
+  var measured=new RoomPoint(p.CenterX/sample.Width,p.CenterY/sample.Height,confirmed.Pan,confirmed.Tilt);
+  if(extend){state=await engine.Execute(new(ReadNativeTracking:true),ct,camera);if(state.NativeTrackingEnabled!=false||CurrentPose()!=confirmed)throw new IOException("Camera controls changed before saving; point not added.");RequireScene(true);RecoveryMapExtension.Save(settings,measured,PersistSettings);}
+  else{settings.RoomPoints=[..settings.RoomPoints,measured];PersistSettings();}
   if(settings.RoomPoints.Length>=4){try{RoomMap.Fit(settings.RoomPoints);calibrationDialog?.SetMapReady(true);if(settings.RoomPoints.Length==25){roomMode.Checked=true;StopTracking("Room map ready · Test room map is available");}}catch(IOException e){mapFitIssue=e.Message;calibrationDialog?.SetMapReady(false);}}
  }
  void FinishRoomCalibration(){try{RoomMap.Fit(settings.RoomPoints);if(trackingMoving)throw new IOException("Wait for centering to finish before completing the map.");StopTracking("Room map complete · Test room map is available");roomMode.Checked=true;calibrationDialog?.UpdateStatus(trackingStatus.Text);calibrationAudio.Complete();}catch(Exception e){calibrationDialog?.UpdateFailure(e.Message);}}

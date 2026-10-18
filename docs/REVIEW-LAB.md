@@ -118,3 +118,14 @@ point hull; Link feedback refines subject framing. Scene/background depth can
 differ from the person's depth, so live recovery testing remains necessary.
 Every scan starts fresh and keeps the prior map archived. Local development is
 unchanged.
+
+### Filling a recovery gap without replacing a map
+
+With unchanged camera mounts, start both previews, confirm built-in tracking is
+off and check the unchanged-mount box. Move to an uncovered position visible to
+both cameras, click **Add recovery point**, and hold still. LINK360 uses its
+existing bounded centering routine, saves one newly measured pair, then stops.
+Repeat at other gaps and run the 60-second recovery test. Version 3 identifies
+a scene-derived map with subject-centred extensions. Original map pairs,
+placement identity and archived prior maps stay intact. A new room-scene scan
+still discards active old measurements and starts fresh.
