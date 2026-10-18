@@ -52,8 +52,20 @@ internal static class SceneScanPolicy {
   }
   if(anchors.Where((a,i)=>anchors.Take(i).Any(p=>Math.Pow(a.X-p.X,2)+Math.Pow(a.Y-p.Y,2)<.06*.06)).Any())throw new IOException("Measured scene points are too closely repeated.");
   if(anchors.Max(a=>a.X)-anchors.Min(a=>a.X)<.2||anchors.Max(a=>a.Y)-anchors.Min(a=>a.Y)<.2)throw new IOException("Shared scene coverage is too small; no usable reference saved.");
-  var hull=OpenCvSharp.Cv2.ConvexHull(anchors.Skip(1).Select(a=>new OpenCvSharp.Point2f((float)a.X,(float)a.Y)));
-  if(OpenCvSharp.Cv2.ContourArea(hull)<.02||OpenCvSharp.Cv2.PointPolygonTest(hull,new((float)anchors[0].X,(float)anchors[0].Y),false)<0)throw new IOException("Measured boundaries do not surround the scene centre.");
+  var hull=OpenCvSharp.Cv2.ConvexHull(anchors.Select(a=>new OpenCvSharp.Point2f((float)a.X,(float)a.Y)));
+  if(OpenCvSharp.Cv2.ContourArea(hull)<.02)throw new IOException("Measured points are too nearly in a line; need a small usable area.");
+ }
+ // A small measured patch is useful; unvisited room boundaries are not required.
+ // This never promotes planned destinations into observations.
+ public static bool CanFinish(IReadOnlyList<SceneAnchor> anchors,IReadOnlyList<SceneTarget> targets){
+  try{ValidateAnchors(anchors,targets);RecoveryPoints(anchors);return true;}catch(IOException){return false;}
+ }
+ // Background correspondences provide coarse reacquisition, not person depth.
+ // RoomMap refuses extrapolation; the Link supplies final subject framing.
+ public static RoomPoint[] RecoveryPoints(IReadOnlyList<SceneAnchor> anchors){
+  if(anchors.Any(a=>a.Zoom!=100))throw new IOException("Recovery scene points require the wide scan view.");
+  var points=anchors.Select(a=>new RoomPoint(a.X,a.Y,a.Pan,a.Tilt)).ToArray();
+  RoomMap.Fit(points);return points;
  }
  public static bool BoundaryCandidate(SceneMatch match,int index,SceneAnchor home,IReadOnlyList<SceneTarget>? targets=null){
   if(index<=0||index>=(targets?.Count??Targets.Length)||!double.IsFinite(match.X+match.Y))return false;

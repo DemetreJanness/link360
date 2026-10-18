@@ -106,3 +106,15 @@ The original ten-point map and primary binary remain separate.
 The shared `Local\LINK360.Desktop` mutex allows one controller at a time.
 Cameras, OBS, hotkeys and Discord remain shared Windows resources; hardware tests
 are sequential. Source/build/profile separation is not an untrusted-code sandbox.
+
+
+### Automatic correction points
+
+The community scan saves once four verified points cover a usable area. Full-room
+coverage is optional. Each saved Acer image coordinate is paired with a measured
+Link pan/tilt direction and published atomically as a version-2 coarse recovery
+map. No second person-point pass is required. Recovery stays inside the measured
+point hull; Link feedback refines subject framing. Scene/background depth can
+differ from the person's depth, so live recovery testing remains necessary.
+Every scan starts fresh and keeps the prior map archived. Local development is
+unchanged.

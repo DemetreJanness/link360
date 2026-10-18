@@ -22,10 +22,11 @@ internal static class FreshSceneScan {
  }
  public static void Complete(Settings settings,string id,SceneAnchor[] anchors,SceneTarget[] targets,Action persist){
   if(settings.PendingSceneScanId!=id)throw new IOException("This scan is no longer current; no calibration saved.");
-  SceneScanPolicy.ValidateAnchors(anchors,targets);
+  SceneScanPolicy.ValidateAnchors(anchors,targets);var recovery=SceneScanPolicy.RecoveryPoints(anchors);
   var before=Snapshot.Take(settings);
   try{
    settings.SceneHome=new(id,DateTime.UtcNow,anchors.ToArray(),targets.ToArray());
+   settings.RoomPoints=recovery;settings.RoomMapVersion=2;settings.RoomMapSceneId=id;
    settings.GuidedPlacementId=null;settings.PendingSceneScanId=null;settings.CameraPlacementChanged=false;
    persist();
   }catch{before.Restore(settings);throw;}

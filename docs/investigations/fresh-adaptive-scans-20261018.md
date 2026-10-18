@@ -127,3 +127,67 @@ range mismatches, failed reads and ambiguous controls. The installed camera's
 read-only probe reported expected range/step/manual flags. The new initial
 framing step has not yet passed a physical scan; do not promote this evidence
 to a completed new-placement room map or Acer recovery.
+
+## Neutral-start live verification and simpler recovery contract
+
+The 20:44:35 UTC scan verified the new starting-view step on the real camera:
+readback moved from (30,4,100) to (0,0,100), and the live image showed the shared
+background. Centre registration then verified 88 inliers at 94.6% agreement.
+Discovery proposed five other locations but stopped because they did not
+surround the centre. This was a coverage-policy rejection, not absent matches.
+The scan stopped, announced failure, and local OBS capture/Virtual Camera were
+restored. The original development settings hash still matched the baseline.
+
+The user then explicitly requested fewer good points for Acer-to-PTZ correction,
+without full-room complexity. The community contract now accepts a measured
+partial area. It stops when at least four independently verified points pass
+spacing, area, spread, match quality and RoomMap fitting. It may attempt up to
+25 candidate locations. The outer points need not surround the centre; a narrow
+line or repeated/weak measurements still cannot complete. Each individual
+optical match must still be supported by surrounding fixed image features.
+
+A completed scan saves its actual (Acer X,Y, Link pan,tilt) pairs directly as
+RoomMapVersion 2 with the current scan identity. No person-point pass is required
+for coarse recovery. Version 1 remains person-centred calibration; manually
+starting that workflow archives the scene-derived map through the existing
+version transition. Failed persistence rolls back both reference and recovery
+pairs. Fresh scans still archive/clear all prior active measurements first.
+
+These background pairs are coarse guidance, not 3D depth or guaranteed
+person-centre accuracy. Existing Delaunay interpolation refuses targets outside
+the measured hull. The hybrid tracker prioritizes a valid Link lock and uses
+Acer for reacquisition; Link image feedback refines final framing. Different
+subject/background depths can still produce parallax error, to be assessed in
+live recovery tests. No guessed or simulated point is counted as measured.
+
+Offline checks passed with zero build warnings/errors, including partial-area
+acceptance, four-point completion, rejection of three/duplicate/collinear/weak
+points, wide-view gating, exact recovery-pair persistence/reload, no
+extrapolation, preserved previous maps and write-failure rollback. Shared
+tracking-loop simulations also passed. A physical run of this simpler contract
+is in progress; offline success does not establish recovery quality.
+The first simplified live run (20:49:28 UTC) passed target discovery and moved
+along seven optically matched positions toward the first candidate, with
+48–88 inliers. It stopped at secondary verification because the frame-difference
+check saw movement or exposure change. This establishes useful scan motion,
+not a completed map. The controller now holds and retries that verification up
+to four times; repeated candidate failure skips that candidate. It keeps fresh
+frame, empty-view, optical stability and geometry checks, and does not count a
+rejected point. Centre failure still stops the scan. The default and shared-loop
+suites passed after this bounded retry change.
+## Completed four-point hardware scan
+
+The next live run (20:51:39–20:53:08 UTC) completed successfully. It independently
+verified four fresh Acer-to-Link pairs, with 41–88 inliers per saved point and
+69–100% agreement. Two transient verification failures were held/retried rather
+than aborting. Return-to-centre verification had 96 inliers and 97% agreement.
+The local report explicitly records `previousMeasurementsReused: false`.
+
+The saved community profile contains four active points, RoomMapVersion 2,
+matching scene/map identities, no pending scan and ten preserved previous
+points. Primary settings/executable and the separately archived original
+community profile still match their baseline hashes. Numeric reports remain in
+local AppData; no room images, settings or full private reports are committed.
+This verifies automatic measurement and persistence. Live subject recovery with
+this background-derived partial map remains the next test, not yet a passed
+result. OBS sharing restoration is tracked separately from scan completion.

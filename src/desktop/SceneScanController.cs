@@ -124,7 +124,7 @@ internal sealed partial class ControllerForm {
        RecordSceneEvent(new{type="centre-reverified",scanId,check.X,check.Y,check.Inliers});
       }
       for(int targetIndex=0;targetIndex<targets.Length;targetIndex++){
-       var (x,y,name)=targets[targetIndex];bool reached=false,limited=false;double previousError=double.MaxValue;int notImproving=0,matchMisses=0;SceneAnchor? lastSupported=null;string? skipped=null;
+       var (x,y,name)=targets[targetIndex];bool reached=false,limited=false;double previousError=double.MaxValue;int notImproving=0,matchMisses=0,verificationMisses=0;SceneAnchor? lastSupported=null;string? skipped=null;
        // Each candidate starts from the freshly verified centre, preserving
        // overlap between measurements of distinct fixed features.
        if(targetIndex>0)await ReturnToFreshCentre();
@@ -163,8 +163,16 @@ internal sealed partial class ControllerForm {
         if(Math.Abs(ex)<.065&&Math.Abs(ey)<.065){
          await Task.Delay(350,token);var room2=await scanFeeds.RoomFrame(token);var link2=await scanFeeds.LinkFrame(token);var r2=await detector.Infer(room2.Bytes,token,.35);var l2=await detector.Infer(link2.Bytes,token,.35);
          SceneScanPolicy.Fresh(room2,DateTime.UtcNow,room.ReadAtUtc!.Value);SceneScanPolicy.Fresh(link2,DateTime.UtcNow,link.ReadAtUtc!.Value);
-         var check=await Task.Run(()=>{SceneRegistration.Stable(room.Bytes,room2.Bytes,r,r2);SceneRegistration.Stable(link.Bytes,link2.Bytes,l,l2);return SceneRegistration.Match(room2.Bytes,link2.Bytes,r2,l2);},token);
-         if(Math.Abs(check.X-match.X)>.025||Math.Abs(check.Y-match.Y)>.025||Math.Abs(x-check.X)>=.065||Math.Abs(y-check.Y)>=.065)throw new IOException("Scene alignment is unstable. Clear the room and retry.");
+         SceneMatch check;
+         try{
+          check=await Task.Run(()=>{SceneRegistration.Stable(room.Bytes,room2.Bytes,r,r2);SceneRegistration.Stable(link.Bytes,link2.Bytes,l,l2);return SceneRegistration.Match(room2.Bytes,link2.Bytes,r2,l2);},token);
+          if(Math.Abs(check.X-match.X)>.025||Math.Abs(check.Y-match.Y)>.025||Math.Abs(x-check.X)>=.065||Math.Abs(y-check.Y)>=.065)throw new IOException("Scene alignment is still settling.");
+         }catch(IOException e) when(r2.Error==null&&l2.Error==null&&r2.People.Length==0&&l2.People.Length==0){
+          RecordSceneEvent(new{type="verification-held",target=name,attempt,reason=e.Message});
+          if(++verificationMisses>=4){if(targetIndex==0)throw;skipped=e.Message;break;}
+          SceneStatus($"Waiting for point to settle · {anchors.Count} saved","Camera held; retrying this point automatically.",true);
+          await Task.Delay(750,token);continue;
+         }
          state=await engine.Execute(new(),token);var pose=CurrentPose();anchors.Add(new(check.X,check.Y,pose.Pan,pose.Tilt,pose.Zoom,check.Inliers,check.InlierRatio,r2.Objects,l2.Objects,limited));verifiedTargets.Add(targets[targetIndex]);RecordSceneEvent(new{type="anchor-verified",scanId,target=name,anchor=anchors[^1]});sceneDialog?.Anchors(anchors);if(targetIndex==0){targets=SceneTargetDiscovery.Discover(check,RecordSceneEvent);RecordSceneEvent(new{type="fresh-target-plan",scanId,targets});sceneDialog?.Targets(targets);}reached=true;break;
         }
         if(!limited&&targetIndex>0&&SceneScanPolicy.BoundaryCandidate(match,targetIndex,anchors[0],targets)){var pose=CurrentPose();lastSupported=new(match.X,match.Y,pose.Pan,pose.Tilt,pose.Zoom,match.Inliers,match.InlierRatio,BoundaryLimited:true);}
@@ -174,6 +182,9 @@ internal sealed partial class ControllerForm {
         state=await engine.Execute(new(Target:next,DurationMs:180),token);after=DateTime.UtcNow;
        }
        if(!reached){if(targetIndex==0)throw new IOException("Fresh centre could not be established.");RecordSceneEvent(new{type="target-skipped",scanId,target=name,reason=skipped??"Target timed out; not included in map"});}
+       if(SceneScanPolicy.CanFinish(anchors,verifiedTargets)){
+        RecordSceneEvent(new{type="enough-points",count=anchors.Count,coverage="measured area only"});break;
+       }
       }
       SceneScanPolicy.ValidateAnchors(anchors,verifiedTargets);SetScenePhase("return-to-centre");await ReturnToFreshCentre();
       var homeMovedAt=DateTime.UtcNow;await Task.Delay(350,token);var homeRoom=await scanFeeds.RoomFrame(token);var homeLink=await scanFeeds.LinkFrame(token);var hr=await detector.Infer(homeRoom.Bytes,token,.35);var hl=await detector.Infer(homeLink.Bytes,token,.35);
@@ -190,7 +201,7 @@ internal sealed partial class ControllerForm {
     catch(Exception e){failure=e.Message;throw;}
     finally{trackingMoving=false;}
    });
-   if(success){SceneStatus("Room scan complete · you may return",anchors.Any(a=>a.BoundaryLimited)?$"{anchors.Count} fresh points verified in the shared view. Some limits remain unmeasured; collect new person points next.":$"{anchors.Count} fresh measured scene points saved. Collect new person points next.",false);await calibrationAudio.Announce("scene-complete.wav",lifetime.Token);}
+   if(success){SceneStatus("Scene points saved · you may return",$"{anchors.Count} fresh Acer-to-Link points saved. Recovery is ready within the measured area.",false);await calibrationAudio.Announce("scene-complete.wav",lifetime.Token);}
    else{if(!cancelled&&scanOrigin!=null)returnPose=scanOrigin;SceneStatus(cancelled?"Scan cancelled · you may return":"Scan not completed · you may return",$"{anchors.Count} verified · "+failure,false);await calibrationAudio.Announce(cancelled?"scene-cancelled.wav":"scene-failed.wav",lifetime.Token);}
   }catch(Exception e){failure=e.Message;SceneStatus(success?"Scan complete · announcement unavailable":"Scene setup stopped",failure,false);}
   finally{

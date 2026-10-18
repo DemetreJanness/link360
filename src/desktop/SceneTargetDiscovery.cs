@@ -48,8 +48,8 @@ internal static class SceneTargetDiscovery {
   }
   if(targets.Max(t=>t.X)-targets.Min(t=>t.X)<.2||targets.Max(t=>t.Y)-targets.Min(t=>t.Y)<.2)
    throw new IOException("Fresh targets cover too little of the shared view; add fixed detail or improve overlap.");
-  var hull=Cv2.ConvexHull(targets.Skip(1).Select(t=>new Point2f((float)t.X,(float)t.Y)));
-  if(Cv2.ContourArea(hull)<.02||Cv2.PointPolygonTest(hull,new((float)home.X,(float)home.Y),false)<0)
-   throw new IOException("Fresh targets do not surround the centre; add fixed detail around the shared view.");
+  var hull=Cv2.ConvexHull(targets.Select((t,i)=>new Point2f((float)(i==0?home.X:t.X),(float)(i==0?home.Y:t.Y))));
+  if(Cv2.ContourArea(hull)<.02)
+   throw new IOException("Fresh locations are too nearly in a line; need a small usable area.");
  }
 }
