@@ -1,0 +1,9 @@
+// Static MSVC x64 RTTI format, cross-checked against LLVM's MicrosoftCXXABI.
+// Reads the vendor PE only. Candidate vtable slots are not runtime identities.
+import fs from 'node:fs';const b=fs.readFileSync('C:/Program Files/Insta360 Link Controller/Insta360 Link Controller.exe'),pe=b.readUInt32LE(60),opt=pe+24,base=b.readBigUInt64LE(opt+24),sections=[];
+for(let i=0,p=opt+b.readUInt16LE(pe+20);i<b.readUInt16LE(pe+6);i++,p+=40)sections.push({rva:b.readUInt32LE(p+12),size:b.readUInt32LE(p+16),off:b.readUInt32LE(p+20)});
+const rva=off=>{const s=sections.find(s=>off>=s.off&&off<s.off+s.size);return s?s.rva+off-s.off:null;},offset=addr=>{const v=Number(addr-base),s=sections.find(s=>v>=s.rva&&v<s.rva+s.size);return s?s.off+v-s.rva:null;};
+const result=[];for(const name of ['WinUVCCameraExtendController','UVCCameraExtendControllerImp','WinUVCCameraController']){const type=b.indexOf(Buffer.from('.?AV'+name+'@@\0'));if(type<0)continue;const typeRva=rva(type-16),locators=[];
+for(const s of sections)for(let p=s.off+12;p<s.off+s.size-12;p+=4)if(b.readUInt32LE(p)===typeRva&&b.readUInt32LE(p-12)===1&&b.readUInt32LE(p+8)===rva(p-12)){const ptr=Buffer.alloc(8);ptr.writeBigUInt64LE(base+BigInt(rva(p-12)));let found=b.indexOf(ptr);while(found>=0){const table=found+8,slots=[];for(let slot=0;slot<48;slot++){if(table+slot*8+8>b.length)break;const address=b.readBigUInt64LE(table+slot*8),fo=offset(address);if(fo==null)break;slots.push({slot,address:'0x'+address.toString(16)});}locators.push({objectOffset:b.readUInt32LE(p-8),vtable:'0x'+(base+BigInt(rva(table))).toString(16),slots});found=b.indexOf(ptr,found+8);}}
+result.push({name,locators});}
+fs.writeFileSync('.rea-tools/vendor-vtables.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result.map(r=>({name:r.name,locators:r.locators.map(l=>({objectOffset:l.objectOffset,vtable:l.vtable,selected:l.slots.filter(s=>[28,29,30,31,32,33,34,35,36,37,38,39,40].includes(s.slot))}))}))));

@@ -1,0 +1,5 @@
+[
+ {"name":"open_binary","arguments":{"path":"C:\\Program Files\\Insta360 Link Controller\\Insta360 Link Controller.exe","provider_id":"ghidra"}},
+ {"name":"search_strings","arguments":{"pattern":"WinUVCCameraExtendController::GetKsControlInterface"}},
+ {"name":"search_strings","arguments":{"pattern":"toSetPanTile"}}
+]

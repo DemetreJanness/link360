@@ -1,0 +1,6 @@
+{
+  "sha256": "C5C2D13E59AE883E6AF3B45DAEA64AF4833A4951C92D116EC270D9DDBE998063",
+  "commit": "47534e27c9851bb1128ccc0102f1145e27f23f98",
+  "repository": "https://github.com/opencv/opencv_zoo",
+  "model": "object_detection_yolox_2022nov.onnx"
+}

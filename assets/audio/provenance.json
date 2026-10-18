@@ -1,0 +1,90 @@
+{
+  "voice": "Cori high, UK English female",
+  "source": "https://huggingface.co/rhasspy/piper-voices/tree/c10ece1aade47bb51c153c893d14e5bf8e5b7117/en/en_GB/cori/high",
+  "generator": "Piper 2023.11.14-2 (development only)",
+  "modelSha256": "470B4DD634C98F8A4850D7626FFC3DFC90774628EEEF6605A6DD8F88F30A5903",
+  "files": [
+    {
+      "sha256": "7ED8842D4BBC34403526B08589A6DA81C999810DB568C5FD0114A3848D0264DC",
+      "name": "calibration-done.wav"
+    },
+    {
+      "sha256": "6CBED37D175011A9FD15DF24A1A1D71494A4A542B57D9409157AB7238370039C",
+      "name": "captured-tracking-point.wav"
+    },
+    {
+      "sha256": "17BF8B6078E7BFF9925DEE32319AB568A39EF61AFA2A3F443E065E85B7BD94D8",
+      "name": "count-1.wav"
+    },
+    {
+      "sha256": "72CA38F94ECB959629AA5CA3703CB8EEFB5BDE1F10D0FB85DC781E748CE06EB5",
+      "name": "count-10.wav"
+    },
+    {
+      "sha256": "B47AE3C7479147B83045EEA85AA223756871D8C0A886D298906467969E5DC153",
+      "name": "count-2.wav"
+    },
+    {
+      "sha256": "02EB945354D34E852332890BA05A95A46CB81B676486D9D753DEF83FBE6B54AE",
+      "name": "count-20.wav"
+    },
+    {
+      "sha256": "120DFEC175060637B8C07AC8BAE1C5E4D14D6BB3B34BA9430175901EFAE40D27",
+      "name": "count-3.wav"
+    },
+    {
+      "sha256": "1B67B91C3FAD9755BB3A147BD219DC848BE48C4E4AE147695B06932A49C92563",
+      "name": "count-30.wav"
+    },
+    {
+      "sha256": "F28D0E926E02562A72727E9A322B42B729B1F4A8E3779C7C58A254ACCF414A5D",
+      "name": "count-4.wav"
+    },
+    {
+      "sha256": "F69F94FCFFD2FEFFF97BA4F3D6BC784D37BD9D0A38D993DB2B00DA09F3B610B7",
+      "name": "count-5.wav"
+    },
+    {
+      "sha256": "F5777F6FD971FBBFBC8DF51A1B0C5E41D1AB77CF2709DD98FD29B5CD3CB11DE0",
+      "name": "next-calibration-point.wav"
+    },
+    {
+      "sha256": "5B4479485C0ED21176690099212B8126FEBC116C5689B8604BF0CE2E3888B906",
+      "name": "scene-cancelled.wav"
+    },
+    {
+      "sha256": "25BF364189301B1093DEDA1054E0A873F5EA68596A0103BAF9B91CC53A631F99",
+      "name": "scene-complete.wav"
+    },
+    {
+      "sha256": "E7BAF5FB7E7C34604B61C8E4E5BB10A6B1D76AEC1922C81062CAB5DA30010D9F",
+      "name": "scene-failed.wav"
+    },
+    {
+      "sha256": "22BFB23DDC0E5A5382DCB6DDC0E279975E7C0224837360F185229BE00A8E3DA2",
+      "name": "scene-leave.wav"
+    },
+    {
+      "sha256": "FA1579869AA2DA41447872D479D7149DD17A8EA647D938F88D7105A95817E796",
+      "name": "scene-start.wav"
+    }
+  ],
+  "texts": {
+    "next-calibration-point.wav": "Please move to the next calibration point, please.",
+    "captured-tracking-point.wav": "Captured tracking point.",
+    "calibration-done.wav": "Done, thank you.",
+    "scene-leave.wav": "Please leave the room. The countdown begins now.",
+    "scene-start.wav": "Scanning the room now. Please stay outside until I say the scan is complete.",
+    "scene-complete.wav": "Room scan complete. You may return now. Done, thank you.",
+    "scene-failed.wav": "The room scan could not complete. You may return now. Please check the message on screen.",
+    "scene-cancelled.wav": "Room scan cancelled. You may return now.",
+    "count-30.wav": "Thirty.",
+    "count-20.wav": "Twenty.",
+    "count-10.wav": "Ten.",
+    "count-5.wav": "Five.",
+    "count-4.wav": "Four.",
+    "count-3.wav": "Three.",
+    "count-2.wav": "Two.",
+    "count-1.wav": "One."
+  }
+}

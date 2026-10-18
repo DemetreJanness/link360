@@ -1,0 +1,6 @@
+{
+  "model": "pose_estimation_mediapipe_2023mar.onnx",
+  "commit": "47534e27c9851bb1128ccc0102f1145e27f23f98",
+  "sha256": "9D89C599319A18FB7D2E28451A883476164543182BAFCA5F09EB2CF767ED2F3F",
+  "repository": "https://github.com/opencv/opencv_zoo"
+}

@@ -1,0 +1,11 @@
+LINK360 local vision includes an adapted C# decoder based on OpenCV 4.13
+FaceDetectorYN (modules/objdetect/src/face_detect.cpp), under Apache License 2.0.
+The full license is included as OpenCV-LICENSE.txt.
+
+Modifications: ONNX Runtime inference; fixed 320x180 input padded to 320x192;
+bounding boxes/confidence only; local checksum validation; geometric framing
+handled separately. Model computational nodes and learned weights are unchanged.
+
+YuNet model license and provenance are distributed in the models directory.
+The input/output shape metadata adaptation is reproducible with
+scripts/prepare-yunet-benchmark.mjs --runtime-model in the LINK360 source.

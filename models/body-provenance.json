@@ -1,0 +1,6 @@
+{
+  "commit": "47534e27c9851bb1128ccc0102f1145e27f23f98",
+  "repository": "https://github.com/opencv/opencv_zoo",
+  "sha256": "47FD5599D6FA17608F03E0EB0AE230BAA6E597D7E8A2C8199FE00ABEA55A701F",
+  "model": "person_detection_mediapipe_2023mar.onnx"
+}

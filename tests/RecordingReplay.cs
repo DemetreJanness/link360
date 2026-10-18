@@ -1,0 +1,17 @@
+using OpenCvSharp;
+using Link360;
+using Link360Desktop;
+internal static class RecordingReplay {
+ public static void Run(string file,bool poseAnchors=false,bool profile=false){
+  using var cap=new VideoCapture(file);if(!cap.IsOpened())throw new IOException("Cannot read recording");using var detector=new LocalWholeBodyDetector(true);using var pose=poseAnchors?new LocalPoseDetector(true):null;var rows=new List<(double T,BodyResult Body)>();var poseTimes=new List<long>();int anchored=0;using var frame=new Mat();using var small=new Mat();
+  var elapsed=new List<double>();var allocated=new List<long>();
+  for(double t=0;t<Math.Min(cap.FrameCount/cap.Fps,profile?6:double.MaxValue);t+=.1){cap.Set(VideoCaptureProperties.PosMsec,t*1000);if(!cap.Read(frame))break;Cv2.Resize(frame,small,new Size(320,180));var bytes=small.ToBytes(".jpg");long beforeAllocation=GC.GetAllocatedBytesForCurrentThread();var clock=System.Diagnostics.Stopwatch.StartNew();var detected=detector.Detect(bytes);if(pose!=null){detected=detected with{AnchorKind="missing"};if(detected.People.Length==1){var anchor=pose.Detect(bytes,detected.People[0]);poseTimes.Add(anchor.Ms);var person=detected.People[0];if(anchor.TorsoX.HasValue&&anchor.TorsoY.HasValue&&anchor.TorsoX>=person.X&&anchor.TorsoX<=person.X+person.Width&&anchor.TorsoY>=person.Y&&anchor.TorsoY<=person.Y+person.Height){anchored++;detected=detected with{People=[person with{CenterX=anchor.TorsoX.Value,CenterY=anchor.TorsoY.Value}],AnchorKind="pose"};}}}clock.Stop();if(rows.Count>=5){elapsed.Add(clock.Elapsed.TotalMilliseconds);allocated.Add(GC.GetAllocatedBytesForCurrentThread()-beforeAllocation);}rows.Add((t,detected));}
+  var state=new CameraReading{Controls=new(){new(){Name="Pan",Min=-145,Max=145,Step=1,Capabilities=2},new(){Name="Tilt",Min=-90,Max=100,Step=1,Capabilities=2},new(){Name="Zoom",Min=100,Max=400,Step=1,Capabilities=2,Value=100}}};
+  var quiet=rows.Where(r=>r.T<17&&LinkLock.HasUsableTorso(r.Body)).ToArray();if(quiet.Length==0)throw new IOException("No usable quiet-period detections");
+  double mx=quiet.Select(r=>r.Body.People[0].CenterX/r.Body.Width).Order().ElementAt(quiet.Length/2),my=quiet.Select(r=>r.Body.People[0].CenterY/r.Body.Height).Order().ElementAt(quiet.Length/2);
+  var planner=new TrackingPlanner();int baseline=0,adaptive=0,usable=0;double maxNoise=0;var start=DateTime.UtcNow;
+  foreach(var r in quiet){var p=r.Body.People[0];double x=p.CenterX/r.Body.Width,y=p.CenterY/r.Body.Height;maxNoise=Math.Max(maxNoise,Math.Max(Math.Abs(x-mx),Math.Abs(y-my)));if(Math.Abs(x-.5)>=.035||Math.Abs(y-.5)>=.035)baseline++;
+   if(planner.PlanBody(r.Body,state,false,false,start.AddSeconds(r.T))!=null)adaptive++;usable++;}
+  Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{recording=Path.GetFileName(file),samples=rows.Count,peopleMissing=rows.Count(r=>r.Body.People.Length==0),usableTorsoSamples=rows.Count(r=>LinkLock.HasUsableTorso(r.Body)),quietSamples=usable,maxNormalizedQuietNoise=maxNoise,legacyQuietCorrectionFrames=baseline,adaptiveQuietCorrectionFrames=adaptive,quietMedianX=mx,quietMedianY=my,poseAnchors,anchored,meanPoseInferenceMs=poseTimes.Count>0?poseTimes.Average():0,meanBodyInferenceMs=rows.Average(r=>r.Body.InferenceMs),detectorPipelineMeanMs=elapsed.Average(),detectorPipelineP95Ms=elapsed.Order().ElementAt((int)(elapsed.Count*.95)),allocatedManagedBytesPerFrame=allocated.Average(),meaning="Offline recorded-noise replay; not a live motor or sensor latency measurement"}));
+ }
+}

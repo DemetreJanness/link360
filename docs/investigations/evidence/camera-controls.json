@@ -1,0 +1,90 @@
+{
+  "Name": "Insta360 Link",
+  "Error": null,
+  "Controls": [
+    {
+      "Name": "Pan",
+      "RangeHResult": 0,
+      "GetHResult": 0,
+      "Min": -145,
+      "Max": 145,
+      "Step": 1,
+      "Default": 0,
+      "Capabilities": 2,
+      "Value": 0,
+      "Flags": 2
+    },
+    {
+      "Name": "Tilt",
+      "RangeHResult": 0,
+      "GetHResult": 0,
+      "Min": -90,
+      "Max": 100,
+      "Step": 1,
+      "Default": 0,
+      "Capabilities": 2,
+      "Value": -79,
+      "Flags": 2
+    },
+    {
+      "Name": "Roll",
+      "RangeHResult": 0,
+      "GetHResult": 0,
+      "Min": -100,
+      "Max": 100,
+      "Step": 1,
+      "Default": 0,
+      "Capabilities": 2,
+      "Value": -20,
+      "Flags": 2
+    },
+    {
+      "Name": "Zoom",
+      "RangeHResult": 0,
+      "GetHResult": 0,
+      "Min": 100,
+      "Max": 400,
+      "Step": 1,
+      "Default": 100,
+      "Capabilities": 2,
+      "Value": 100,
+      "Flags": 2
+    },
+    {
+      "Name": "Exposure",
+      "RangeHResult": -2147023728,
+      "GetHResult": -2147023728,
+      "Min": 0,
+      "Max": 0,
+      "Step": 0,
+      "Default": 0,
+      "Capabilities": 0,
+      "Value": 0,
+      "Flags": 0
+    },
+    {
+      "Name": "Iris",
+      "RangeHResult": -2147023728,
+      "GetHResult": -2147023728,
+      "Min": 0,
+      "Max": 0,
+      "Step": 0,
+      "Default": 0,
+      "Capabilities": 0,
+      "Value": 0,
+      "Flags": 0
+    },
+    {
+      "Name": "Focus",
+      "RangeHResult": 0,
+      "GetHResult": 0,
+      "Min": 0,
+      "Max": 100,
+      "Step": 1,
+      "Default": 50,
+      "Capabilities": 3,
+      "Value": 0,
+      "Flags": 1
+    }
+  ]
+}
