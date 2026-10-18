@@ -9,8 +9,8 @@ namespace Link360 {
  // Captured original-Link selector22: [pan direction,magnitude,tilt direction,magnitude].
  // Signed API axes follow standard Windows pan/tilt; tilt wire direction is inverted.
  public static class NativeSpeedPacket {
-  public const int Maximum=4;
-  public static byte[] Encode(int pan,int tilt){if(Math.Abs((long)pan)>Maximum||Math.Abs((long)tilt)>Maximum)throw new ArgumentOutOfRangeException("speed","Only captured-level speeds up to four are admitted");byte Dir(int v)=>v==0?(byte)0:v>0?(byte)1:(byte)255;return new[]{Dir(pan),(byte)Math.Max(1,Math.Abs(pan)),Dir(-tilt),(byte)Math.Max(1,Math.Abs(tilt))};}
+  public const int Maximum=10; public const int TrackingMaximum=10; public const int RecoveryMaximum=4;
+  public static byte[] Encode(int pan,int tilt){if(Math.Abs((long)pan)>Maximum||Math.Abs((long)tilt)>Maximum)throw new ArgumentOutOfRangeException("speed","Native UI-derived magnitude must be between zero and ten");byte Dir(int v)=>v==0?(byte)0:v>0?(byte)1:(byte)255;return new[]{Dir(pan),(byte)Math.Max(1,Math.Abs(pan)),Dir(-tilt),(byte)Math.Max(1,Math.Abs(tilt))};}
  }
  public static class NativeAngleFeedback { public static int DriverUnits(int tenths,int min,int max){if((long)tenths<min*10L||(long)tenths>max*10L)throw new ArgumentOutOfRangeException(nameof(tenths),"Native pose outside verified driver range");return (int)Math.Round(tenths/10.0,MidpointRounding.AwayFromZero);} }
  public sealed class NativeSpeedLease {
@@ -22,7 +22,7 @@ namespace Link360 {
  }
  public sealed class NativeSpeedSlew {
   int value;long changed=-1000;
-  public int Tick(int desired,long now){if(Math.Abs((long)desired)>4)throw new ArgumentOutOfRangeException(nameof(desired));if(desired==0){value=0;changed=now;return 0;}if(value!=0&&Math.Sign(value)!=Math.Sign(desired)){value=0;changed=now;return 0;}if(now-changed>=60&&value!=desired){value+=Math.Sign(desired-value);changed=now;}return value;}
+  public int Tick(int desired,long now,int maximum=NativeSpeedPacket.Maximum){if(maximum<1||maximum>NativeSpeedPacket.Maximum||Math.Abs((long)desired)>maximum)throw new ArgumentOutOfRangeException(nameof(desired));value=Math.Clamp(value,-maximum,maximum);if(desired==0){value=0;changed=now;return 0;}if(value!=0&&Math.Sign(value)!=Math.Sign(desired)){value=0;changed=now;return 0;}if(now-changed>=60&&value!=desired){value+=Math.Sign(desired-value);changed=now;}return value;}
  }
  public static partial class CameraProbe {
   sealed class SpeedChannel:IDisposable {
@@ -79,10 +79,10 @@ namespace Link360 {
        if(request.Pan<panMin||request.Pan>panMax||request.Tilt<tiltMin||request.Tilt>tiltMax||request.Zoom!=zoom)throw new Exception("Speed target outside bounded range");target=request;lastDemand=arrival;lease.Hold();}
      }
      var desired=lease.Read(now);
-     if(target!=null){if(now-lastDemand>=NativeSpeedLease.ExpiryMs){target=null;desired=(0,0);}else{int Axis(int error)=>Math.Abs(error)<=1?0:Math.Sign(error)*Math.Min(4,(int)Math.Ceiling(Math.Abs(error)/4.0));desired=(Axis(target.Pan-cache[0].Value),Axis(target.Tilt-cache[1].Value));}}
+     if(target!=null){if(now-lastDemand>=NativeSpeedLease.ExpiryMs){target=null;desired=(0,0);}else{int Axis(int error)=>Math.Abs(error)<=1?0:Math.Sign(error)*Math.Min(NativeSpeedPacket.RecoveryMaximum,(int)Math.Ceiling(Math.Abs(error)/4.0));desired=(Axis(target.Pan-cache[0].Value),Axis(target.Tilt-cache[1].Value));}}
      int Guard(int demand,int value,int min,int max)=>demand>0&&value>=max-2||demand<0&&value<=min+2?0:demand;
      desired=(Guard(desired.Item1,cache[0].Value,panMin,panMax),Guard(desired.Item2,cache[1].Value,tiltMin,tiltMax));
-     int pan=pSlew.Tick(desired.Item1,now),tilt=tSlew.Tick(desired.Item2,now);
+     int cap=target!=null?NativeSpeedPacket.RecoveryMaximum:NativeSpeedPacket.Maximum;int pan=pSlew.Tick(desired.Item1,now,cap),tilt=tSlew.Tick(desired.Item2,now,cap);
      if(pan!=sentPan||tilt!=sentTilt){channel.Write(pan,tilt);sentPan=pan;sentTilt=tilt;}
      if(now-lastBeat>=50){guardian.StandardInput.WriteLine("beat");guardian.StandardInput.Flush();lastBeat=clock.ElapsedMilliseconds;}
      if(request!=null)respond(Snapshot());Thread.Sleep(20);

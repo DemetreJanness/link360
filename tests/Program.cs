@@ -5,6 +5,7 @@ using Link360Desktop;
 if(SharedPipelineTests.TryWorker(args))return;
 if(args.Contains("--shared-pipeline-test")){await SharedPipelineTests.Run(args.Last());return;}
 if(args.Contains("--native-speed-feedback-check")){await NativeSpeedProbe.Run(args[1],args[2],true);return;}
+if(args.Contains("--native-higher-speed-probe")){await NativeSpeedProbe.Run(args[1],args[2],higher:true);return;}
 if(args.Contains("--native-speed-probe")){await NativeSpeedProbe.Run(args[1],args[2]);return;}
 if(args.Contains("--community-profile")){Console.WriteLine(JsonSerializer.Serialize(new {name=CommunityProfile.Title,settings=CommunityProfile.SettingsFile,diagnostics=CommunityProfile.DiagnosticsDirectory}));return;}
 if(args.Contains("--gpu-head-benchmark")){GpuHeadBenchmark.Run(args[1],args[2],!args.Contains("--cpu"));return;}

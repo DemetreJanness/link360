@@ -354,6 +354,12 @@ internal sealed partial class ControllerForm : Form {
   catch(Exception e){testReason="failed · "+e.Message;if(ReferenceEquals(tracking,session))StopTracking("Room tracking stopped · "+e.Message);}
   finally{if(test!=null){try{lastTestReport=test.Finish(testReason);if(testReason=="60-second test completed")trackingStatus.Text=test.CompletionMessage;roomStatus.Text="Room-map test report saved locally · "+testReason;calibrationDialog?.UpdateStatus(roomStatus.Text);}catch(Exception e){roomStatus.Text="Test report error · "+e.Message;}try{test.Dispose();}catch{}if(ReferenceEquals(roomTest,test))roomTest=null;}session.Dispose();}
  }
+ async Task CueTrackingTest(RoomMapTest test,CancellationToken ct){
+  if(!calibrationAudio.Enabled)return;
+  try{foreach(var cue in new[]{(At:0,File:"tracking-still.wav"),(At:15000,File:"tracking-slow.wav"),(At:25000,File:"tracking-fast.wav"),(At:32000,File:"tracking-settle.wav")}){
+   while(test.ElapsedMs<cue.At)await Task.Delay(100,ct);ct.ThrowIfCancellationRequested();await calibrationAudio.Announce(cue.File,ct);
+  }}catch(OperationCanceledException){}catch(IOException e){roomStatus.Text="Test voice unavailable · "+e.Message;}
+ }
  static string TestPhase(TrackingDecision decision,bool forcedAcer){
   string phase=decision.Outcome switch{"outside-map"=>"Outside saved room area","alignment-range"=>"Framing exceeds camera range","handoff-hold"=>"Waiting for a clear subject","acquiring"=>"Finding subject","fine-hold"=>"Holding framing","fine-wait"=>"Link view guiding","fine-centering"=>"Adjusting framing","native-speed"=>"Following · native speed",_=>"Acer view guiding"};
   return forcedAcer?"Acer takeover · "+phase:phase;
@@ -362,7 +368,7 @@ internal sealed partial class ControllerForm : Form {
   if(roomTest!=null){trackingStatus.Text="Test already running · Stop movement ends it";return;}
   StopTracking();int version=requestVersion;while(busy&&refreshing&&!lifetime.IsCancellationRequested)await Task.Delay(25);if(version!=requestVersion||lifetime.IsCancellationRequested)return;
   try{bool linkOnly=trackingModeSelector.SelectedIndex==1;if(trackingModeSelector.SelectedIndex==2)throw new IOException("Select a software tracking mode for this test.");if(!linkOnly){RequireScene();RoomMap.Fit(settings.RoomPoints);}if(!nativeOff.Checked)throw new IOException("Confirm built-in tracking is off using the checkbox above.");if(!cameraAvailable||state==null||busy||linkPreview==null||(!linkOnly&&(overview==null||body==null)))throw new IOException("Start previews and wait for the selected cameras to be ready. "+roomStatus.Text);
-   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment,linkOnly);testStopReason=null;trackingOrigin=CurrentPose();trackingPlanner.Reset();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";if(linkOnly)activeTrackingLoop = Track(tracking,roomTest);else activeTrackingLoop = TrackRoom(tracking,roomTest);
+   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment,linkOnly);testStopReason=null;trackingOrigin=CurrentPose();trackingPlanner.Reset();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";_ = CueTrackingTest(roomTest,tracking.Token);if(linkOnly)activeTrackingLoop = Track(tracking,roomTest);else activeTrackingLoop = TrackRoom(tracking,roomTest);
   }catch(Exception e){trackingStatus.Text="Test not started · "+e.Message;}
  }
  void ShowTestReport(){var directory=DiagnosticsDirectory;if(!Directory.Exists(directory))directory=Path.Combine(AppContext.BaseDirectory,"logs");var path=lastTestReport??(Directory.Exists(directory)?Directory.GetFiles(directory,"room-test-*.summary.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault():null);if(path==null){trackingStatus.Text="No room-map test report yet";return;}var report=new Form(){Text="LINK360 · Local room-map test report",Size=new Size(760,650),BackColor=SuiteTheme.Background};report.Controls.Add(new TextBox(){Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Font=new Font("Consolas",11),BackColor=SuiteTheme.Background,ForeColor=SuiteTheme.Text,Text=File.ReadAllText(path)+"\r\n\r\nSaved locally: "+path});report.Show(this);}

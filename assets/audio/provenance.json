@@ -67,6 +67,22 @@
     {
       "sha256": "FA1579869AA2DA41447872D479D7149DD17A8EA647D938F88D7105A95817E796",
       "name": "scene-start.wav"
+    },
+    {
+      "sha256": "CE167479FC98340E3C4FA6FA07DF7AD59F4DBFA6E422652E3903083BF4F91BA0",
+      "name": "tracking-fast.wav"
+    },
+    {
+      "sha256": "E691FCB36CDC4860CD40764840BACB3C6BF01C0C03ED4C2FAF17612090D7BE9E",
+      "name": "tracking-settle.wav"
+    },
+    {
+      "sha256": "A08156C8D8CF03BA634526A5E036576A0767230686FA68DA48302112DB6C48DB",
+      "name": "tracking-slow.wav"
+    },
+    {
+      "sha256": "0CCC78E3F2BDD904EDE6135BB0FADFC5B7FDEC818DA6B2F3BA620EC731867B0F",
+      "name": "tracking-still.wav"
     }
   ],
   "texts": {
@@ -85,6 +101,10 @@
     "count-4.wav": "Four.",
     "count-3.wav": "Three.",
     "count-2.wav": "Two.",
-    "count-1.wav": "One."
+    "count-1.wav": "One.",
+    "tracking-still.wav": "Tracking test started. Please sit still for fifteen seconds.",
+    "tracking-slow.wav": "Please move slowly left and right.",
+    "tracking-fast.wav": "Now make a faster sideways movement.",
+    "tracking-settle.wav": "Please return to your normal seat and stay still until the test is complete."
   }
 }
