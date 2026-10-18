@@ -71,3 +71,30 @@ scanner. Contributor workflow and selective promotion are in `docs/REVIEW-LAB.md
 The local-development commit remains `1cc6b3c`. Its binary and ten-point settings
 hashes matched the pre-task baseline; the community ten-point seed profile also
 remained unchanged before any new live scan. No captures or settings are staged.
+
+## First adaptive live run and follow-up correction
+
+The authorized run started at 20:30:35 UTC. The spoken countdown ran, both direct
+feeds opened, native tracking was read as off, and the centre was measured.
+The centre's verification had 84 inliers at 94% agreement. Discovery then
+rejected the proposed coverage: targets did not surround the measured centre.
+No completed map or Acer recovery result is claimed. The app announced failure
+and stopped; OBS Link capture and Virtual Camera were restored and verified active.
+
+The community profile has zero active old points and an explicit incomplete
+scan ID; its ten previous points are preserved both in the profile's archive
+field and a separate flushed AppData archive. The original development map and
+binary remain untouched. This validates the fresh-generation failure lifecycle
+on hardware, not a complete room map.
+
+A synthetic regression reproduced a separate selection weakness: a supported
+nearby feature cluster could be discarded by the 0.14-radius exclusion before
+coverage validation. Lowering the candidate radius to 0.10 and ranking distances
+from the actual measured centre retains that cluster. The fixture failed before
+the fix and passed afterward. This is a demonstrated selection bug; whether it
+caused this room's failure still needs a new live run. Optical match, hull-area,
+spread, duplicate, cancellation and movement checks remain unchanged.
+
+Discovery now reports its proposed locations in the private local diagnostic
+report even when validation fails, so the next failure can be explained from
+numeric evidence. No frame recording or external runtime service was added.

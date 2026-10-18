@@ -8,7 +8,7 @@ internal record SceneTarget(double X,double Y,string Name);
 internal static class SceneTargetDiscovery {
  public static readonly SceneTarget Centre=new(.5,.5,"centre");
  public const int MaximumPoints=25;
- public static SceneTarget[] Discover(SceneMatch current){
+ public static SceneTarget[] Discover(SceneMatch current,Action<object>? evidence=null){
   var points=(current.RoomFeatures??[]).Where(p=>float.IsFinite(p.X+p.Y)&&p.X>=0&&p.X<=1&&p.Y>=0&&p.Y<=1)
    .GroupBy(p=>(Math.Round(p.X*500),Math.Round(p.Y*500))).Select(g=>g.First()).ToArray();
   if(points.Length<16||current.Inliers<16||!double.IsFinite(current.InlierRatio)||current.InlierRatio<.6||current.InlierRatio>1||!double.IsFinite(current.X+current.Y)||Math.Abs(current.X-.5)>=.065||Math.Abs(current.Y-.5)>=.065)
@@ -22,16 +22,17 @@ internal static class SceneTargetDiscovery {
    if(nearby.Length<3)continue;
    double x=nearby.Average(p=>(double)p.X),y=nearby.Average(p=>(double)p.Y);
    double dx=x-current.X,dy=y-current.Y;
-   if(dx*dx+dy*dy<.14*.14||Math.Abs(dx)>.36||Math.Abs(dy)>.32||Cv2.PointPolygonTest(hull,new((float)x,(float)y),true)<.015)continue;
+   if(dx*dx+dy*dy<.10*.10||Math.Abs(dx)>.36||Math.Abs(dy)>.32||Cv2.PointPolygonTest(hull,new((float)x,(float)y),true)<.015)continue;
    candidates.Add((x,y,nearby.Length));
   }
   var result=new List<SceneTarget>{Centre};
   while(result.Count<MaximumPoints&&candidates.Count>0){
-   var ranked=candidates.Select(c=>(c,Distance:result.Min(t=>Math.Sqrt(Math.Pow(t.X-c.X,2)+Math.Pow(t.Y-c.Y,2)))))
+   var ranked=candidates.Select(c=>(c,Distance:result.Select((t,i)=>(X:i==0?current.X:t.X,Y:i==0?current.Y:t.Y)).Min(t=>Math.Sqrt(Math.Pow(t.X-c.X,2)+Math.Pow(t.Y-c.Y,2)))))
     .Where(c=>c.Distance>=.10).OrderByDescending(c=>c.Distance+Math.Min(c.c.Support,20)*.002).ThenBy(c=>c.c.X).ThenBy(c=>c.c.Y).ToArray();
    if(ranked.Length==0)break;
    var next=ranked[0].c;result.Add(new(next.X,next.Y,$"point {result.Count}"));candidates.Remove(next);
   }
+  evidence?.Invoke(new{type="target-discovery",featureCount=points.Length,remainingCandidates=candidates.Count,centreX=current.X,centreY=current.Y,proposed=result.ToArray()});
   Validate(result,new(current.X,current.Y,0,0,100,current.Inliers,current.InlierRatio));
   return result.ToArray();
  }

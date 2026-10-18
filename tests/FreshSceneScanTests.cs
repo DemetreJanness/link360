@@ -22,6 +22,13 @@ internal static class FreshSceneScanTests {
   Reject(()=>SceneTargetDiscovery.Discover(match with{RoomFeatures=Cloud(.06,.06)}),"Tiny support became a clean map");
   Reject(()=>SceneTargetDiscovery.Discover(match with{RoomFeatures=Cloud(.26,.24).Where(p=>p.X<.5).ToArray()}),"One-sided features became a surrounding map");
   Reject(()=>SceneTargetDiscovery.Discover(match with{InlierRatio=.2}),"Ambiguous current match generated targets");
+  // A nearby cluster can be the only upper-left support. Dropping it merely
+  // because it is close to home makes a usable triangle look one-sided.
+  var nearSupport=new List<PointF>();
+  foreach(var c in new[]{new PointF(.42f,.42f),new PointF(.75f,.42f),new PointF(.5f,.79f)})
+   for(int x=-2;x<=2;x++)for(int y=-2;y<=2;y++)nearSupport.Add(new(c.X+x*.012f,c.Y+y*.012f));
+  var nearbyPlan=SceneTargetDiscovery.Discover(match with{RoomFeatures=nearSupport.ToArray()});
+  Check(nearbyPlan.Length>=4,"Nearby supported features were discarded before coverage could be measured");
   var home=new SceneAnchor(.5,.5,0,0,100,50,.9);
   var measured=plan.Select((p,i)=>new SceneAnchor(p.X,p.Y,i,i,100,40,.9)).ToArray();SceneScanPolicy.ValidateAnchors(measured,plan);
   Reject(()=>SceneScanPolicy.ValidateAnchors(measured[..3],plan[..3]),"Three measurements became a complete map");
