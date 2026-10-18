@@ -26,3 +26,22 @@ pending motion on feedback waits. An additional assertion confirms that every
 final-error and late-travel bounds; rebuilt default fixtures pass. Live A/B
 movement/settling check remains pending. Primary/local build and both maps are
 outside this change.
+
+## Live result
+
+The community run `room-test-20261018-214126-e81cabd3` completed with 480
+samples, no stale/missing feeds, 36 outside-map samples and 285 movement
+requests. Forced Acer produced 76 moves in 84 samples. The final ten seconds
+had 19 moves despite a small room-target span (0.0155 X / 0.0355 Y). User judged
+it “Still jerky or slow”: physical smoothness acceptance failed.
+
+Sixteen feedback-wait samples exercised the fix. Mean command request/reply
+was 15.9ms (max133.3ms), mean room inference26.0ms, observed Link frame age80.4ms.
+These are application timings, not exposure-to-motor latency. The fix alone
+clearly does not solve movement quality. Small relative position goals and
+whole-unit driver targets remain; investigate the movement transport/goal
+stream before further blind speed tuning. Do not infer that more calibration
+points or faster GPU inference will remove this stepping.
+
+Tracking/previews were paused after the run and OBS camera sharing restored.
+Community six points, archived ten points and primary settings are unchanged.
