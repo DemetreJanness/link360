@@ -347,17 +347,19 @@ internal sealed partial class ControllerForm : Form {
  async void StartRoomTest(){
   if(roomTest!=null){trackingStatus.Text="Test already running · Stop movement ends it";return;}
   StopTracking();int version=requestVersion;while(busy&&refreshing&&!lifetime.IsCancellationRequested)await Task.Delay(25);if(version!=requestVersion||lifetime.IsCancellationRequested)return;
-  try{RequireScene();RoomMap.Fit(settings.RoomPoints);if(!nativeOff.Checked)throw new IOException("Confirm built-in tracking is off using the checkbox above.");if(state==null||busy||overview==null||linkPreview==null||body==null)throw new IOException("Start both previews and wait for a connected Link and live torso. "+roomStatus.Text);
-   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment);testStopReason=null;tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";_ = TrackRoom(tracking,roomTest);
+  try{bool linkOnly=trackingModeSelector.SelectedIndex==1;if(trackingModeSelector.SelectedIndex==2)throw new IOException("Select a software tracking mode for this test.");if(!linkOnly){RequireScene();RoomMap.Fit(settings.RoomPoints);}if(!nativeOff.Checked)throw new IOException("Confirm built-in tracking is off using the checkbox above.");if(!cameraAvailable||state==null||busy||linkPreview==null||(!linkOnly&&(overview==null||body==null)))throw new IOException("Start previews and wait for the selected cameras to be ready. "+roomStatus.Text);
+   roomTest=new RoomMapTest(DiagnosticsDirectory,settings.RoomPoints,recordTestVideo.Checked,roomAlignment,linkOnly);testStopReason=null;trackingOrigin=CurrentPose();trackingPlanner.Reset();tracking=CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);trackingToggle.Text="Pause tracking";if(linkOnly)_ = Track(tracking,roomTest);else _ = TrackRoom(tracking,roomTest);
   }catch(Exception e){trackingStatus.Text="Test not started · "+e.Message;}
  }
  void ShowTestReport(){var directory=DiagnosticsDirectory;if(!Directory.Exists(directory))directory=Path.Combine(AppContext.BaseDirectory,"logs");var path=lastTestReport??(Directory.Exists(directory)?Directory.GetFiles(directory,"room-test-*.summary.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault():null);if(path==null){trackingStatus.Text="No room-map test report yet";return;}var report=new Form(){Text="LINK360 · Local room-map test report",Size=new Size(760,650),BackColor=SuiteTheme.Background};report.Controls.Add(new TextBox(){Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Font=new Font("Consolas",11),BackColor=SuiteTheme.Background,ForeColor=SuiteTheme.Text,Text=File.ReadAllText(path)+"\r\n\r\nSaved locally: "+path});report.Show(this);}
- async Task Track(CancellationTokenSource session) {
+ async Task Track(CancellationTokenSource session,RoomMapTest? test=null) {
+  string testReason="interrupted";
   byte[]? lastHash=null;var lastChanged=DateTime.UtcNow;DateTime lastSharedObservation=DateTime.MinValue;bool frameHold=false;LocalBodySession? inference=null;
   try {
    await using var cameraSession=new LocalCameraSession(session.Token,continuous:true,limitedTravel:true);
    trackingStatus.Text="Local AI tracking on · manual movement turns it off";
    while(!session.IsCancellationRequested) {
+    if(test?.Expired==true){testReason="60-second test completed";StopTracking("Link-only test complete");break;}
     if(!cameraAvailable||state==null)throw new IOException("Camera unavailable; enable tracking again after recovery.");
     bool sharedPreview=linkPreview!=null;
     if(sharedPreview&&inference!=null){await inference.DisposeAsync();inference=null;}
@@ -366,7 +368,7 @@ internal sealed partial class ControllerForm : Form {
      BodyResult result;DateTime observedAt;
      if(sharedPreview){
       var shared=linkObservation;observedAt=linkObservationTime;
-      if(shared==null||lastLinkFrame==null){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · waiting for a fresh Link frame";await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
+      if(shared==null||lastLinkFrame==null){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · waiting for a fresh Link frame";RecordLinkTest(test,"missing-frame",null,null,CurrentPose());await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
 
       result=shared;
      }else{
@@ -377,11 +379,12 @@ internal sealed partial class ControllerForm : Form {
       if(packet.ReadAtUtc==null&&DateTime.UtcNow-lastChanged>TimeSpan.FromSeconds(2))throw new IOException("Camera frames unchanged; restart preview before tracking.");
       result=await inference.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();observedAt=packet.ReadAtUtc??packet.ReceivedUtc;
      }
-     if(observedAt>DateTime.UtcNow||DateTime.UtcNow-observedAt>=TimeSpan.FromMilliseconds(600)){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · Link frame stale; holding position";if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
+     if(observedAt>DateTime.UtcNow||DateTime.UtcNow-observedAt>=TimeSpan.FromMilliseconds(600)){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · Link frame stale; holding position";RecordLinkTest(test,"stale-frame",result,observedAt,CurrentPose());if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
      // Age-check duplicates too; rejected future timestamps must not advance the cursor.
-     if(sharedPreview){if(observedAt<=lastSharedObservation){await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}lastSharedObservation=observedAt;}
+     if(sharedPreview){if(observedAt<=lastSharedObservation){RecordLinkTest(test,"waiting-frame",result,observedAt,CurrentPose());await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}lastSharedObservation=observedAt;}
      frameHold=false;
      if(state==null||busy){trackingPlanner.Reset();continue;}
+     var testBefore=CurrentPose();double? testCommandMs=null;var testClock=System.Diagnostics.Stopwatch.StartNew();
      var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,observedAt);
      if(target==null)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
      if(target!=null&&trackingOrigin!=null&&(Math.Abs(target.Pan-trackingOrigin.Pan)>20||Math.Abs(target.Tilt-trackingOrigin.Tilt)>15))throw new IOException("Tracking travel limit reached; reframe manually before enabling again.");
@@ -389,16 +392,23 @@ internal sealed partial class ControllerForm : Form {
      if(target!=null&&!busy) {
       trackingMoving=true;
       var before=CurrentPose();try {await Run(async ct=>{using var both=CancellationTokenSource.CreateLinkedTokenSource(ct,session.Token);state=await engine.Execute(new(Target:target,DurationMs:75,SpeedScale:trackingPlanner.SpeedScale,RelativePan:target.Pan-before.Pan,RelativeTilt:target.Tilt-before.Tilt),both.Token,cameraSession);},false);}
-      finally{trackingMoving=false;}
+      finally{trackingMoving=false;testCommandMs=testClock.Elapsed.TotalMilliseconds;}
       if(state==null)throw new IOException("Tracking movement interrupted; enable again to resume.");
      }
+     RecordLinkTest(test,target==null?"hold":"move",result,observedAt,testBefore,target,testCommandMs);
      if(!session.IsCancellationRequested)trackingStatus.Text+=$" · {cycle.ElapsedMilliseconds} ms update";
     }
     if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);else if(busy)await Task.Delay(15,session.Token);
    }
-  }catch(OperationCanceledException)when(session.IsCancellationRequested){}
-  catch(Exception e){if(ReferenceEquals(tracking,session))StopTracking("Local AI tracking stopped · "+e.Message);}
-  finally{if(inference!=null)await inference.DisposeAsync();session.Dispose();}
+  }catch(OperationCanceledException)when(session.IsCancellationRequested){testReason=testStopReason??"cancelled";}
+  catch(Exception e){testReason="failed · "+e.Message;if(ReferenceEquals(tracking,session))StopTracking("Local AI tracking stopped · "+e.Message);}
+  finally{if(test!=null&&testReason=="interrupted"&&session.IsCancellationRequested)testReason=testStopReason??"cancelled";if(inference!=null)await inference.DisposeAsync();if(test!=null){try{lastTestReport=test.Finish(testReason);trackingStatus.Text=testReason=="60-second test completed"?test.CompletionMessage:"Link-only test · "+testReason;roomStatus.Text="Link-only test report saved locally";}catch(Exception e){roomStatus.Text="Test report error · "+e.Message;}try{test.Dispose();}catch{}if(ReferenceEquals(roomTest,test))roomTest=null;}session.Dispose();}
+ }
+ void RecordLinkTest(RoomMapTest? test,string outcome,BodyResult? result,DateTime? observedAt,Pose before,Pose? target=null,double? commandMs=null){
+  if(test==null)return;var person=result?.People.Length==1?result.People[0]:null;var room=body;var rp=room?.People.Length==1?room.People[0]:null;
+  Pose? resolved=state?.ResolvedTargetPan is int px&&state.ResolvedTargetTilt is int py?new(px,py,before.Zoom):null;Pose? commanded=state?.CommandedPan is int cx&&state.CommandedTilt is int cy?new(cx,cy,before.Zoom):null;
+  var sample=new RoomTestSample(test.ElapsedMs,outcome,room?.People.Length??0,rp?.Confidence,rp==null?null:rp.CenterX/room!.Width,rp==null?null:rp.CenterY/room!.Height,(DateTime.UtcNow-bodyTime).TotalMilliseconds,result?.InferenceMs??0,result?.People.Length??0,person==null?null:person.CenterX/result!.Width-.5,person==null?null:person.CenterY/result!.Height-.5,observedAt==null?null:(DateTime.UtcNow-observedAt.Value).TotalMilliseconds,before,target,state==null?null:CurrentPose(),commandMs,target==null?null:trackingPlanner.SpeedScale,target==null?null:target.Pan-before.Pan,target==null?null:target.Tilt-before.Tilt,resolved,commanded,result?.AnchorKind);
+  test.Record(sample);test.Capture(lastRoomFrame,lastLinkFrame,sample);trackingStatus.Text=$"Link-only test · {test.ElapsedMs/1000}/60 sec · {outcome}";
  }
  async Task WatchVideo() {
   while(!lifetime.IsCancellationRequested) {

@@ -40,7 +40,7 @@ internal static class SharedPipelineTests {
   }
   return true;
  }
- static WorkerRequest[] Commands(string folder){var commands=new List<WorkerRequest>();foreach(var line in Directory.GetFiles(folder,"camera-*.jsonl").SelectMany(File.ReadAllLines)){using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("request",out var request))commands.Add(request.Deserialize<WorkerRequest>(Wire)!);}return commands.ToArray();}
+ static WorkerRequest[] Commands(string folder){var commands=new List<WorkerRequest>();foreach(var path in Directory.GetFiles(folder,"camera-*.jsonl")){try{using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);using var reader=new StreamReader(stream);string? line;while((line=reader.ReadLine())!=null){try{using var json=JsonDocument.Parse(line);if(json.RootElement.TryGetProperty("request",out var request))commands.Add(request.Deserialize<WorkerRequest>(Wire)!);}catch(JsonException){/* Worker may still be appending the final line; next poll retries. */}}}catch(IOException){/* Short writer-open race; next bounded poll retries. */}}return commands.ToArray();}
  static int Moves(string folder)=>Commands(folder).Count(r=>r.Target!=null&&!r.Hold);
  static int Holds(string folder)=>Commands(folder).Count(r=>r.Hold);
  static async Task Until(Func<bool> condition,int timeout=2000){var clock=Stopwatch.StartNew();while(!condition()&&clock.ElapsedMilliseconds<timeout)await Task.Delay(25);}
@@ -49,7 +49,7 @@ internal static class SharedPipelineTests {
   using var form=new ControllerForm();using var preview=new CancellationTokenSource();using var tracking=new CancellationTokenSource();
   Get<CameraFeeds>(form,"feeds").AllowObsFallback=false;Set(form,"cameraAvailable",true);Set(form,"state",Reading());Set(form,"trackingOrigin",new Pose(0,0,100));Set(form,"linkPreview",preview);Set(form,"tracking",tracking);
   setup?.Invoke(form,folder);Task? loop=null;
-  try{loop=(Task)typeof(ControllerForm).GetMethod("Track",Fields)!.Invoke(form,[tracking])!;await run(form,tracking,folder);}
+  try{loop=(Task)typeof(ControllerForm).GetMethod("Track",Fields)!.Invoke(form,[tracking,Get<RoomMapTest?>(form,"roomTest")])!;await run(form,tracking,folder);}
   finally{tracking.Cancel();if(loop!=null)await loop.WaitAsync(TimeSpan.FromSeconds(4));await Get<CameraFeeds>(form,"feeds").DisposeAsync();}
   Check(name+": no duplicate inference/capture worker",Directory.GetFiles(folder,"unexpected-*.jsonl").Length==0);
   Check(name+": one camera worker",Directory.GetFiles(folder,"camera-*.jsonl").Length==1);
@@ -87,6 +87,17 @@ internal static class SharedPipelineTests {
       await Until(()=>Holds(folder)>0);int holds=Holds(folder);await Task.Delay(300);
       Check("missing observation holds without command flooding",holds==1&&Holds(folder)==holds&&Moves(folder)==0);
      });
+     await Scenario(root,"link-only-test-log",async(form,tracking,folder)=>{
+      await Until(()=>Holds(folder)>0);
+      for(int i=0;i<5;i++){Publish(form,DateTime.UtcNow);await Task.Delay(80);}
+      var diagnostic=Get<RoomMapTest>(form,"roomTest");
+      using var stream=new FileStream(diagnostic.LogPath,FileMode.Open,FileAccess.Read,FileShare.ReadWrite);using var reader=new StreamReader(stream);var lines=reader.ReadToEnd().Split('\n',StringSplitOptions.RemoveEmptyEntries);using var header=JsonDocument.Parse(lines[0]);
+      Check("Link-only diagnostic identifies steering mode",header.RootElement.GetProperty("mode").GetString()=="link-only");
+      Check("Link-only diagnostic never forces Acer",header.RootElement.GetProperty("forcedAcerWindowMs").GetArrayLength()==0);
+      Check("Link-only diagnostic records actual loop moves",lines.Any(line=>line.Contains("\"Outcome\":\"move\""))&&Moves(folder)>0);
+     },(form,folder)=>Set(form,"roomTest",new RoomMapTest(Path.Combine(folder,"diagnostics"),[],linkOnly:true)));
+     var logSummary=Directory.GetFiles(Path.Combine(root,"link-only-test-log","diagnostics"),"*.summary.json").Single();
+     using(var report=JsonDocument.Parse(File.ReadAllText(logSummary)))Check("Link-only cancellation saves its mode and reason",report.RootElement.GetProperty("mode").GetString()=="link-only"&&report.RootElement.GetProperty("reason").GetString()=="cancelled");
      await Scenario(root,"preview-failure-fallback",async(form,tracking,folder)=>{
       await Until(()=>Holds(folder)>0);Set(form,"linkPreview",null);
       await Until(()=>Moves(folder)>0);

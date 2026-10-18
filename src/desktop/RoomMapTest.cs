@@ -11,17 +11,17 @@ internal sealed class RoomMapTest : IDisposable {
  long? lostAt;int reacquisitions;long longestGap;int staleRoom,staleLink;double minX=1,maxX=0,minY=1,maxY=0;
  public string LogPath {get;}
  public string? SummaryPath {get;private set;}
- readonly RoomTestVideo? video;public string? VideoPath{get;}
+ readonly bool linkOnly;readonly RoomTestVideo? video;public string? VideoPath{get;}
  public bool Expired=>clock.Elapsed>=TimeSpan.FromSeconds(60);
  public long ElapsedMs=>clock.ElapsedMilliseconds;
- public string CompletionMessage=>outside>0?"Test finished · some positions were outside the room map":staleRoom+staleLink>0?"Test finished · camera freshness needs attention":"Test finished · review movement and framing";
- public RoomMapTest(string directory,RoomPoint[] points,bool recordVideo=false,RoomAlignment? alignment=null) {
-  RoomMap.Fit(points);Directory.CreateDirectory(directory);
+ public string CompletionMessage=>outside>0?"Test finished · some positions were outside the room map":(linkOnly?staleLink:staleRoom+staleLink)>0?"Test finished · camera freshness needs attention":"Test finished · review movement and framing";
+ public RoomMapTest(string directory,RoomPoint[] points,bool recordVideo=false,RoomAlignment? alignment=null,bool linkOnly=false) {
+  this.linkOnly=linkOnly;if(!linkOnly)RoomMap.Fit(points);Directory.CreateDirectory(directory);
   var old=Directory.GetFiles(directory,"room-test-*.jsonl").OrderByDescending(File.GetLastWriteTimeUtc).ToArray();
   foreach(var file in old.Skip(9)){File.Delete(file);var summary=Path.ChangeExtension(file,"summary.json");if(File.Exists(summary))File.Delete(summary);}
   LogPath=Path.Combine(directory,$"room-test-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}.jsonl");
   if(recordVideo){foreach(var file in Directory.GetFiles(directory,"room-test-*.avi").OrderByDescending(File.GetLastWriteTimeUtc).Skip(2))File.Delete(file);VideoPath=Path.ChangeExtension(LogPath,".avi");video=new(VideoPath);}
-  log=new StreamWriter(LogPath,false);Write(new{type="start",schema=3,atUtc=DateTime.UtcNow,durationSeconds=60,map=points,alignment,forcedAcerWindowMs=new[]{35000,40000},privacy="Numeric camera diagnostics only; no frames or identity data",timing="Direct frame ages start at camera Read return; OBS ages start at response receipt. Commanded/resolved poses are issued goals, not physical motor measurements."});
+  log=new StreamWriter(LogPath,false);Write(new{type="start",schema=4,mode=linkOnly?"link-only":"acer-recovery",atUtc=DateTime.UtcNow,durationSeconds=60,map=points,alignment,forcedAcerWindowMs=linkOnly?Array.Empty<int>():new[]{35000,40000},privacy="Numeric camera diagnostics only; no frames or identity data",timing="Direct frame ages start at camera Read return; OBS ages start at response receipt. Commanded/resolved poses are issued goals, not physical motor measurements."});
  }
  public void Capture(FeedFrame? room,FeedFrame? link,RoomTestSample sample)=>video?.Push(room,link,sample);
  void Write(object value){if(log.BaseStream.Position>2_000_000)throw new IOException("Local test log reached its size limit.");log.WriteLine(JsonSerializer.Serialize(value));log.Flush();}
@@ -39,7 +39,7 @@ internal sealed class RoomMapTest : IDisposable {
  public string Finish(string reason) {
   if(finished)return SummaryPath!;
   video?.Dispose();
-  var summary=new{type="summary",atUtc=DateTime.UtcNow,reason,elapsedMs=clock.ElapsedMilliseconds,samples,movementRequests=moves,holds,roomMissingOrAmbiguous=missing,outsideMap=outside,staleRoomSamples=staleRoom,staleOrMissingLinkSamples=staleLink,roomTargetReacquisitions=reacquisitions,longestRoomTargetGapMs=longestGap,observedRoomXSpan=Math.Max(0,maxX-minX),observedRoomYSpan=Math.Max(0,maxY-minY),freshLinkErrorSamples=errors,linkCenterRmsNormalized=errors==0?(double?)null:Math.Sqrt(squaredError/errors),localVideo=VideoPath,localVideoError=video?.Error,assessment="Observations only; inspect coverage, lost-target behavior and physical motion before accepting the map"};
+  var summary=new{type="summary",mode=linkOnly?"link-only":"acer-recovery",atUtc=DateTime.UtcNow,reason,elapsedMs=clock.ElapsedMilliseconds,samples,movementRequests=moves,holds,roomMissingOrAmbiguous=missing,outsideMap=outside,staleRoomSamples=staleRoom,staleOrMissingLinkSamples=staleLink,roomTargetReacquisitions=reacquisitions,longestRoomTargetGapMs=longestGap,observedRoomXSpan=Math.Max(0,maxX-minX),observedRoomYSpan=Math.Max(0,maxY-minY),freshLinkErrorSamples=errors,linkCenterRmsNormalized=errors==0?(double?)null:Math.Sqrt(squaredError/errors),localVideo=VideoPath,localVideoError=video?.Error,assessment="Observations only; inspect coverage, lost-target behavior and physical motion before accepting the map"};
   Write(summary);if(video!=null)Write(new{type="local-video",path=VideoPath,error=video.Error,meaning="Latest paired preview frames, not synchronized exposure; overlay positions are issued/driver values, not motor encoders"});SummaryPath=Path.ChangeExtension(LogPath,"summary.json");File.WriteAllText(SummaryPath,JsonSerializer.Serialize(summary,Program.Json));finished=true;log.Dispose();return SummaryPath;
  }
  public void Dispose(){if(!finished)Finish("interrupted");log.Dispose();}
