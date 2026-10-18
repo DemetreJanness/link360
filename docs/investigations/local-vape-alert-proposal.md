@@ -14,3 +14,5 @@ PTZ speed/handoff policy. No uploads, telemetry or background recording; any
 training examples require explicit local capture. Do not describe this as a
 smoke alarm or verified vape classifier. Select an actual detector only after
 reviewing local hardware, model licensing and representative false positives.
+
+Implemented as a separate experimental lab: see local-vape-alert-20261018.md. Manual OBS effect is verified; automatic timing failed the live checks and defaults off.

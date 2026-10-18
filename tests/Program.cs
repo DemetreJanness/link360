@@ -2,6 +2,7 @@ using System.Text.Json;
 using Link360;
 using Link360Desktop;
 
+if(args.Contains("--vape-alert-tests")){VapeAlertTests.Run();VapeObsTests.Run();return;}
 if(SharedPipelineTests.TryWorker(args))return;
 if(args.Contains("--shared-pipeline-test")){await SharedPipelineTests.Run(args.Last());return;}
 if(args.Contains("--native-speed-feedback-check")){await NativeSpeedProbe.Run(args[1],args[2],true);return;}
@@ -26,7 +27,7 @@ if(args.Contains("--test-video")){using var frame=new OpenCvSharp.Mat(180,320,Op
 
 static void Assert(bool condition,string text){if(!condition)throw new Exception(text);}
 SceneTests.Run();
-FreshSceneScanTests.Run();FreshCoverageTests.Run();RecoveryMapExtensionTests.Run();
+VapeAlertTests.Run();VapeObsTests.Run();FreshSceneScanTests.Run();FreshCoverageTests.Run();RecoveryMapExtensionTests.Run();
 SceneStartTests.Run();
 VideoMotionReview.Verify();
 HandoffAlignmentTests.Run();

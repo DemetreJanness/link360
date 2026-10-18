@@ -95,6 +95,10 @@
     {
       "name": "coverage-right.wav",
       "sha256": "4016852E15F9CB57DA15BF62D247F302827AF7A8274170DC3798A1220ED3132A"
+    },
+    {
+      "sha256": "EFAB3F9BA43B3006A79DC14B5DA9F562FF3E37908D111C73E7D8D898302EBB4B",
+      "name": "vape-alert.wav"
     }
   ],
   "texts": {
@@ -120,6 +124,7 @@
     "tracking-settle.wav": "Please return to your normal seat and stay still until the test is complete.",
     "coverage-start.wav": "Fresh calibration started. Face the Link camera. Move slowly left and right, then nearer and farther. Pause for two seconds whenever you are framed. I will confirm each captured point. Your saved maps will stay unchanged.",
     "coverage-left.wav": "Move toward the left edge of the area you calibrated, and stay there. The Acer camera will guide recovery.",
-    "coverage-right.wav": "Now move toward the right edge of your calibrated area, and stay there for Acer recovery."
+    "coverage-right.wav": "Now move toward the right edge of your calibrated area, and stay there for Acer recovery.",
+    "vape-alert.wav": "Vape alert!"
   }
 }
