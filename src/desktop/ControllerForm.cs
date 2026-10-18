@@ -195,7 +195,7 @@ internal sealed partial class ControllerForm : Form {
  void PausePreviews(){roomAlignment=null;syncStatus.Text="Session alignment cleared · sync is optional.";++requestVersion;overview?.Cancel();overview=null;linkPreview?.Cancel();linkPreview=null;body=null;linkObservation=null;lastRoomFrame=null;lastLinkFrame=null;if(trackingMoving)Cancel();else StopTracking();roomStatus.Text="Previews paused · camera movement off";gestureStatus.Text="Arm gesture detector paused";mainRoomPreview.Clear("Preview paused");mainLinkPreview.Clear("Preview paused");_ = feeds.StopCapture();}
  void SignalTrackingFrame(){if(trackingFramesReady.CurrentCount==0)trackingFramesReady.Release();}
  void PreviewReady(){if(tracking==null&&lastRoomFrame!=null&&lastLinkFrame!=null&&trackingStatus.Text=="Starting camera previews · movement off")trackingStatus.Text="Previews live · tracking off";}
- async Task WatchLinkPreview(CancellationTokenSource session){try{await using var detector=new LocalBodySession(session.Token,wholeBody:true,torso:true);while(!session.IsCancellationRequested){var packet=await feeds.LinkFrame(session.Token);var frame=packet.Bytes;var detected=await detector.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();lastLinkFrame=packet;PreviewReady();linkObservation=detected;linkObservationTime=packet.ReadAtUtc??packet.ReceivedUtc;SignalTrackingFrame();mainLinkPreview.UpdateFrame(frame,detected);if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateLinkBody(frame,detected);}}catch(OperationCanceledException)when(session.IsCancellationRequested){}catch(Exception e){if(!IsDisposed){mainLinkPreview.Clear(e.Message);if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateFailure(e.Message);}}finally{if(ReferenceEquals(linkPreview,session))linkPreview=null;session.Dispose();}}
+ async Task WatchLinkPreview(CancellationTokenSource session){try{await using var detector=new LocalBodySession(session.Token,wholeBody:true,torso:true);byte[]? last=null;var changed=DateTime.UtcNow;while(!session.IsCancellationRequested){var packet=await feeds.LinkFrame(session.Token);var frame=packet.Bytes;if(packet.ReadAtUtc==null){var hash=System.Security.Cryptography.SHA256.HashData(frame);if(last==null||!hash.SequenceEqual(last))changed=DateTime.UtcNow;last=hash;if(DateTime.UtcNow-changed>TimeSpan.FromSeconds(2)){linkObservation=null;lastLinkFrame=null;SignalTrackingFrame();continue;}}else changed=DateTime.UtcNow;var detected=await detector.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();lastLinkFrame=packet;PreviewReady();linkObservation=detected;linkObservationTime=packet.ReadAtUtc??packet.ReceivedUtc;SignalTrackingFrame();mainLinkPreview.UpdateFrame(frame,detected);if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateLinkBody(frame,detected);}}catch(OperationCanceledException)when(session.IsCancellationRequested){}catch(Exception e){if(!IsDisposed){mainLinkPreview.Clear(e.Message);if(calibrationDialog is {IsDisposed:false})calibrationDialog.UpdateFailure(e.Message);}}finally{if(ReferenceEquals(linkPreview,session))linkPreview=null;session.Dispose();}}
  void CalibrationStatus(string text){trackingStatus.Text=text;if(calibrationDialog is {IsDisposed:false}){calibrationDialog.UpdateStatus(text);if(text.StartsWith("Blocked")||text.StartsWith("Point not saved")||text.StartsWith("Calibration stopped"))calibrationDialog.UpdateFailure(text);calibrationDialog.UpdatePoints(settings.RoomPoints.Length);}}
  void PrepareTorsoMap(){PrepareSceneMap();if(settings.RoomMapVersion==1)return;settings.PreviousRoomPoints=settings.RoomPoints;settings.RoomPoints=[];settings.RoomMapVersion=1;PersistSettings();}
  void OpenCalibration(){
@@ -353,22 +353,34 @@ internal sealed partial class ControllerForm : Form {
  }
  void ShowTestReport(){var directory=DiagnosticsDirectory;if(!Directory.Exists(directory))directory=Path.Combine(AppContext.BaseDirectory,"logs");var path=lastTestReport??(Directory.Exists(directory)?Directory.GetFiles(directory,"room-test-*.summary.json").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault():null);if(path==null){trackingStatus.Text="No room-map test report yet";return;}var report=new Form(){Text="LINK360 · Local room-map test report",Size=new Size(760,650),BackColor=SuiteTheme.Background};report.Controls.Add(new TextBox(){Dock=DockStyle.Fill,Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Font=new Font("Consolas",11),BackColor=SuiteTheme.Background,ForeColor=SuiteTheme.Text,Text=File.ReadAllText(path)+"\r\n\r\nSaved locally: "+path});report.Show(this);}
  async Task Track(CancellationTokenSource session) {
-  byte[]? lastHash=null;var lastChanged=DateTime.UtcNow;
+  byte[]? lastHash=null;var lastChanged=DateTime.UtcNow;DateTime lastSharedObservation=DateTime.MinValue;bool frameHold=false;LocalBodySession? inference=null;
   try {
-   await using var inference=new LocalBodySession(session.Token,wholeBody:true,torso:true);
    await using var cameraSession=new LocalCameraSession(session.Token,continuous:true,limitedTravel:true);
    trackingStatus.Text="Local AI tracking on · manual movement turns it off";
    while(!session.IsCancellationRequested) {
     if(!cameraAvailable||state==null)throw new IOException("Camera unavailable; enable tracking again after recovery.");
+    bool sharedPreview=linkPreview!=null;
+    if(sharedPreview&&inference!=null){await inference.DisposeAsync();inference=null;}
     if(!busy) {
      var cycle=System.Diagnostics.Stopwatch.StartNew();
-     var packet=await feeds.LinkFrame(session.Token);var frame=packet.Bytes;
-     var hash=System.Security.Cryptography.SHA256.HashData(frame);
-     if(lastHash==null||!hash.SequenceEqual(lastHash))lastChanged=DateTime.UtcNow;lastHash=hash;
-     if(packet.ReadAtUtc==null&&DateTime.UtcNow-lastChanged>TimeSpan.FromSeconds(2))throw new IOException("Camera frames unchanged; restart preview before tracking.");
-     var result=await inference.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();
+     BodyResult result;DateTime observedAt;
+     if(sharedPreview){
+      var shared=linkObservation;observedAt=linkObservationTime;
+      if(shared==null||lastLinkFrame==null){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · waiting for a fresh Link frame";await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
+      if(observedAt<=lastSharedObservation){await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);continue;}
+      lastSharedObservation=observedAt;
+      result=shared;
+     }else{
+      inference??=new LocalBodySession(session.Token,wholeBody:true,torso:true);
+      var packet=await feeds.LinkFrame(session.Token);var frame=packet.Bytes;
+      var hash=System.Security.Cryptography.SHA256.HashData(frame);
+      if(lastHash==null||!hash.SequenceEqual(lastHash))lastChanged=DateTime.UtcNow;lastHash=hash;
+      if(packet.ReadAtUtc==null&&DateTime.UtcNow-lastChanged>TimeSpan.FromSeconds(2))throw new IOException("Camera frames unchanged; restart preview before tracking.");
+      result=await inference.Infer(frame,session.Token);session.Token.ThrowIfCancellationRequested();observedAt=packet.ReadAtUtc??packet.ReceivedUtc;
+     }
+     if(observedAt>DateTime.UtcNow||DateTime.UtcNow-observedAt>=TimeSpan.FromMilliseconds(600)){trackingPlanner.Reset();if(!frameHold){state=await engine.Execute(new(Hold:true),session.Token,cameraSession);frameHold=true;}trackingStatus.Text="Tracking on · Link frame stale; holding position";continue;}frameHold=false;
      if(state==null||busy){trackingPlanner.Reset();continue;}
-     var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,packet.ReadAtUtc??packet.ReceivedUtc);
+     var target=trackingPlanner.PlanBody(result,state,reversePan.Checked,reverseTilt.Checked,observedAt);
      if(target==null)state=await engine.Execute(new(Hold:true),session.Token,cameraSession);
      if(target!=null&&trackingOrigin!=null&&(Math.Abs(target.Pan-trackingOrigin.Pan)>20||Math.Abs(target.Tilt-trackingOrigin.Tilt)>15))throw new IOException("Tracking travel limit reached; reframe manually before enabling again.");
      trackingStatus.Text=result.People.Length==0?"Tracking on · no torso; holding position":result.People.Length>1?"Tracking on · multiple people; holding position":"Tracking on · torso target detected";
@@ -380,11 +392,11 @@ internal sealed partial class ControllerForm : Form {
      }
      if(!session.IsCancellationRequested)trackingStatus.Text+=$" · {cycle.ElapsedMilliseconds} ms update";
     }
-    if(busy)await Task.Delay(15,session.Token);
+    if(sharedPreview)await trackingFramesReady.WaitAsync(TimeSpan.FromMilliseconds(100),session.Token);else if(busy)await Task.Delay(15,session.Token);
    }
   }catch(OperationCanceledException)when(session.IsCancellationRequested){}
   catch(Exception e){if(ReferenceEquals(tracking,session))StopTracking("Local AI tracking stopped · "+e.Message);}
-  finally{session.Dispose();}
+  finally{if(inference!=null)await inference.DisposeAsync();session.Dispose();}
  }
  async Task WatchVideo() {
   while(!lifetime.IsCancellationRequested) {
