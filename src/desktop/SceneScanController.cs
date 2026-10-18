@@ -92,7 +92,7 @@ internal sealed partial class ControllerForm {
      SetScenePhase("initial-framing");
      SceneStatus("Setting a wide starting view","Checking fresh empty views before a bounded move. Room alignment is verified next.",true);
      var beforeHome=CurrentPose();returnPose=beforeHome;scanOrigin=beforeHome;
-     var freshAfter=DateTime.UtcNow;var initialRoom=await scanFeeds.RoomFrame(token);var initialLink=await scanFeeds.LinkFrame(token);
+     var freshAfter=DateTime.UtcNow;await Task.Delay(250,token);var initialRoom=await scanFeeds.RoomFrame(token);var initialLink=await scanFeeds.LinkFrame(token);
      var initialRoomBody=await detector.Infer(initialRoom.Bytes,token,.35);var initialLinkBody=await detector.Infer(initialLink.Bytes,token,.35);
      state=await engine.Execute(new(ReadNativeTracking:true),token);
      SceneScanPolicy.Fresh(initialRoom,DateTime.UtcNow,freshAfter);SceneScanPolicy.Fresh(initialLink,DateTime.UtcNow,freshAfter);
