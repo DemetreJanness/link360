@@ -1,98 +1,108 @@
 # LINK360: two maintained builds
 
-| Version | Local branch | Source | Purpose |
-| --- | --- | --- | --- |
-| Local development | `codex/local-development` | Original `Link` workspace | Continue our development independently |
-| Community review | `codex/community-build` | This separate managed worktree; incoming changes from `origin/main` | Build and evaluate the friend's committed findings |
+| Build | Local and GitHub branch | Purpose |
+| --- | --- | --- |
+| Local development | `codex/local-development` | Original workspace and known local build |
+| Community review | `codex/community-build` | Isolated test build and reviewed contributions |
 
-Remote: https://github.com/DemetreJanness/link360.git. The friend commits to
-GitHub `main` on their end. There is no review API integration on this machine.
-The published starting point is `1cc6b3cd180d0915633fd7ad1e7ec112455c53ed`.
+Both branches are published to https://github.com/DemetreJanness/link360.
+`main` remains a shared baseline; publishing does not merge either build into it.
+No API service, telemetry, automatic runtime download or background updater is
+installed. Git operations transfer source only. Builds and camera tests run locally.
 
-The local development branch has no upstream, so a plain `git pull` there cannot
-bring in community changes. The community branch tracks `origin/main` and also
-contains local review infrastructure. Do not push this branch over GitHub main.
-Neither checkout auto-updates, merges, launches, or publishes anything.
+## One-command updates
 
-## Build and check the community version
-
-From this checkout:
+Run from the community worktree. Check for incoming code without executing it:
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-builds.ps1
+```
+
+After reviewing changes and committing them, close the community app and publish:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\sync-builds.ps1 -Publish
+```
+
+This fetches GitHub, checks both worktrees are clean, builds/tests community with
+the local NuGet cache, and pushes the two named branches atomically. It never
+pulls, merges, resets, force-pushes, copies settings or launches the cameras.
+A remote conflict stops publication for review. Local development is published
+at its current commit without rebuilding or changing its files. Its existing
+validation remains separate from the community test result.
+
+Optionally stage an explicit list of reviewed source files with `git add --
+<paths>` and pass `-Publish -CommitMessage "Describe the reviewed change"`.
+Only staged files are committed; all unstaged/untracked changes block the run.
+Generated/private paths are rejected. This is a filename guard, not a secret
+scanner: review the staged diff and never stage settings, recordings or keys.
+A failed test leaves that local commit available to fix, without pushing it.
+Git uses your configured commit identity and credentials.
+
+No scheduled task was created. Run this command when changes are ready, or ask
+Codex to review and publish. Unreviewed incoming code is never executed by the
+status command. `-IncomingBranch <branch>` selects a different proposal to report.
+
+## Instructions for a contributor
+
+> Fetch the repository and branch from `origin/codex/community-build`. Create a
+> new branch such as `codex/kairos-scan-improvements`. Keep changes focused and
+> include tests and a short explanation of the failure and expected behavior.
+> Push your branch and open a pull request targeting `codex/community-build`.
+> Keep all camera processing local. Do not commit credentials, settings, room
+> points, recordings, models or captures. Preserve `CommunityProfile`, the
+> single-controller mutex, movement limits and manual stop behavior. Do not
+> push directly to `main` or `codex/local-development`.
+
+Existing proposal: `codex/tracking-pipeline-efficiency`, incoming
+`6c1a484a2bdaecb022aca7da1c0d7b1b27d26e13`; community import `148abb0` followed
+by independent timestamp corrections and integration tests. See
+[incoming review](investigations/community-pipeline-review.md).
+
+## Review and integrate a proposal
+
+Fetch, inspect the actual diff and any changes to dependencies/build scripts
+before running it. In the clean community checkout only:
+
+```powershell
+git fetch --no-tags origin
+git diff HEAD...origin/codex/kairos-scan-improvements
+git merge --no-ff --no-commit origin/codex/kairos-scan-improvements
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-review-lab.ps1
 ```
 
-This uses the local NuGet cache, builds the desktop project and default fixture
-tests, and runs those tests without camera hardware, OBS or the vendor app.
-Outputs and logs are ignored under `artifacts/review-lab/`. Temporary fixtures
-stay under `.rea-tools/`. Missing cached packages fail restore rather than add
-an online feed. Dependency security auditing is not part of this offline run.
+Resolve conflicts deliberately, retain profile isolation, then commit the
+reviewed merge. `git merge --abort` abandons an uncommitted merge. Record the
+incoming SHA, fixture results and physical test results separately. Fixtures do
+not establish optical movement quality. Rebuild after any conflict resolution.
 
-When a camera test is wanted, first close the normal LINK360 application, then:
+To promote an accepted fix into local development, use a separate integration
+branch from its current head and select only accepted implementation/test
+commits. Re-test against local development, then merge that integration branch.
+Do not merge the entire community branch: it contains profile/lab infrastructure.
+Promotion remains an explicit decision, independent of publishing both builds.
+
+## Build, launch and private data
 
 ```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-review-lab.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-community.ps1
 ```
 
-The community window says **Community review build** and **COMMUNITY REVIEW**.
-It reads and writes `%LOCALAPPDATA%\LINK360-Community\settings.local.json` and
-stores diagnostics/video under that profile's `diagnostics` folder. The normal
-app retains its executable-local settings and `%LOCALAPPDATA%\LINK360` logs.
-A one-time private copy of the original settings seeds the community profile;
-subsequent changes do not synchronize in either direction. Never commit either
-settings file, the room map, recordings or captures.
+Tests restore from the local NuGet cache with no online feeds or security audit,
+build to ignored `artifacts/review-lab/bin`, run default fixtures and actual-loop
+simulations, and save numeric reports. Missing cached dependencies fail restore.
+The community window is labelled **Community review build**. Settings are at
+`%LOCALAPPDATA%\LINK360-Community\settings.local.json`; reports and optional test
+clips are in that profile's `diagnostics` directory. The primary app keeps its
+executable-local settings and `%LOCALAPPDATA%\LINK360` diagnostics.
 
-The shared `Local\LINK360.Desktop` mutex deliberately allows only one interactive
-LINK360 controller at a time. Cameras, hotkeys, OBS and Discord are shared
-Windows resources, not virtual copies. Hardware tests remain sequential.
+A one-time private seed copy initialized community. No subsequent settings sync
+occurs. A fresh scan archives its prior community map under `preserved-maps`,
+clears active old measurements, and creates a new scan identity. Failure or
+cancellation leaves the new map incomplete, never silently restoring old points.
+The original ten-point map and primary binary remain separate.
 
-## Receive committed changes from the friend
-
-In the community checkout only:
-
-```powershell
-git fetch --no-tags origin main
-git log --oneline HEAD..origin/main
-git diff HEAD...origin/main
-```
-
-Inspect the new commits, build scripts, dependencies and test entry points
-before executing their code. To bring reviewed commits into the community build:
-
-```powershell
-git merge --no-ff --no-commit origin/main
-```
-
-Resolve conflicts deliberately, retaining `CommunityProfile` settings/log paths,
-the review label and the single-controller mutex. Build and run the local checks.
-Commit the resulting merge only after its scope and results are understood.
-Use `git merge --abort` to abandon an uncommitted merge. Do not force-reset the
-community branch to remote main; that would remove the local isolation layer.
-
-The check report records the local SHA and whether its tree had uncommitted
-changes. Record the incoming SHA and relevant before/after behavior when testing
-a proposal. Default fixtures do not establish physical movement quality.
-
-## Bring selected fixes into local development
-
-Use an integration branch from the current local development head and select
-only the implementation/test commits we accept. Re-run checks against our
-current development code, then integrate that result. Keep independent fixes
-in separate commits. Leave community profile and lab setup commits in this
-checkout; do not merge the whole community branch into local development.
-
-This is source/build/data separation, not an OS sandbox for untrusted code.
-Review code before running it. The ten original map points stay in the normal
-app's private settings; community tests cannot change that file through the
-community settings path.
-
-## Current test candidate
-
-On October 18, the user requested testing the friend's separate branch
-`codex/tracking-pipeline-efficiency` rather than waiting for it to reach `main`.
-Incoming SHA: `6c1a484a2bdaecb022aca7da1c0d7b1b27d26e13`; community import: `148abb0`.
-It is applied only here, followed by a separate timestamp correction and
-hardware-free integration tests. See
-[incoming review and validation](investigations/community-pipeline-review.md).
-The test runner now includes the actual-loop simulation in addition to the
-default fixtures. Local development and remote branches were not modified.
+The shared `Local\LINK360.Desktop` mutex allows one controller at a time.
+Cameras, OBS, hotkeys and Discord remain shared Windows resources; hardware tests
+are sequential. Source/build/profile separation is not an untrusted-code sandbox.
